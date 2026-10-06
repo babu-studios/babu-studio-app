@@ -1,0 +1,1 @@
+export const MEDIA_CORE_STATUS_TIMEOUT_MS = 5000;

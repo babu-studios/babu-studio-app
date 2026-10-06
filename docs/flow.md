@@ -29,3 +29,5 @@ flowchart TD
     R --> S[Save Final Video]
     S --> T[End]
 ```
+
+The capture and export steps above describe the planned product workflow; they are not implemented in the initial Electron/C++ scaffold.

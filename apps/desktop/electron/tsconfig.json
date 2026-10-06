@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "types": ["node", "electron"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": "../../../",
+    "paths": {
+      "@shared/*": ["shared/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "electron.vite.config.ts", "../../../shared/types/**/*.ts"]
+}

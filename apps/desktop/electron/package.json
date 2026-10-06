@@ -1,0 +1,45 @@
+{
+  "name": "@dui-studio/electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop shell for DUI Studio.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron-builder": "^26.0.0",
+    "electron": "36.9.5",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.8.0",
+    "vite": "^6.0.0"
+  },
+  "build": {
+    "appId": "studio.dui.app",
+    "productName": "DUI Studio",
+    "directories": {
+      "output": "../../../release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../../core/build/bin/creator-media-core",
+        "to": "media-core/creator-media-core"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "extendInfo": {
+        "NSCameraUsageDescription": "DUI Studio uses camera access to show connected cameras and capture cards in your scene preview."
+      }
+    }
+  }
+}

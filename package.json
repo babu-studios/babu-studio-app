@@ -1,0 +1,22 @@
+{
+  "name": "dui-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A macOS creator studio built with Electron, React, and a C++ media core.",
+  "workspaces": [
+    "apps/desktop/electron",
+    "apps/desktop/renderer/react"
+  ],
+  "scripts": {
+    "build:core": "cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release && cmake --build core/build --config Release",
+    "test:core": "cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON && cmake --build core/build --config Debug && ctest --test-dir core/build --output-on-failure",
+    "dev": "npm run build:core && npm run dev --workspace @dui-studio/electron",
+    "build": "npm run build:core && npm run build --workspace @dui-studio/electron",
+    "package:mac": "npm run build && npm run package:mac --workspace @dui-studio/electron",
+    "typecheck": "npm run typecheck --workspace @dui-studio/electron && npm run typecheck --workspace @dui-studio/renderer"
+  },
+  "allowScripts": {
+    "electron@36.9.5": true,
+    "esbuild@0.25.12": true
+  }
+}

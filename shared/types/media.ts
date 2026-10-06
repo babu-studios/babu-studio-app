@@ -1,0 +1,1 @@
+export type MediaCoreStatus = "ready";
