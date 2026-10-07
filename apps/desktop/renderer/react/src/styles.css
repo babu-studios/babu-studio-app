@@ -27,6 +27,17 @@ input {
 
 button {
   color: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+select,
+input[type="checkbox"],
+input[type="range"] {
+  cursor: pointer;
 }
 
 .studio-app {
@@ -226,7 +237,6 @@ button {
 .preview-card:focus-visible,
 .layer-toggle-button:focus-visible,
 .scene-row:focus-visible,
-.mute-button:focus-visible,
 .settings-button:focus-visible {
   outline: 2px solid #91e5c5;
   outline-offset: 2px;
@@ -686,7 +696,8 @@ button {
   display: flex;
   min-width: 0;
   align-items: center;
-  padding-right: 3px;
+  gap: 5px;
+  padding-right: 6px;
   border: 1px solid #2f3339;
   border-radius: 6px;
   background: #1a1c20;
@@ -823,6 +834,7 @@ button {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
 
@@ -853,6 +865,11 @@ button {
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+}
+
+.layer-add-option:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .layer-add-option:hover,
@@ -935,7 +952,6 @@ button {
 }
 
 .layer-settings-name input,
-.layer-device-select select,
 .layer-crop-field input {
   width: 100%;
   min-width: 0;
@@ -951,7 +967,6 @@ button {
 }
 
 .layer-settings-name input:focus,
-.layer-device-select select:focus,
 .layer-crop-field input:focus {
   border-color: #668c7a;
   box-shadow: 0 0 0 2px #91e5c51f;
@@ -974,39 +989,6 @@ button {
   margin: 2px 0;
   color: #7f868e;
   font-size: 11px;
-}
-
-.layer-action-button {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: #858c93;
-  cursor: pointer;
-  opacity: 0.8;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, opacity 120ms ease;
-}
-
-.layer-action-button svg {
-  width: 15px;
-  height: 15px;
-}
-
-.layer-action-button:hover,
-.layer-action-button[aria-expanded="true"] {
-  border-color: #3a5449;
-  background: #202923;
-  color: #b1edd2;
-  opacity: 1;
-}
-
-.layer-action-button:focus-visible {
-  outline: 2px solid #91e5c5;
-  outline-offset: 2px;
 }
 
 .scene-row {
@@ -1097,32 +1079,23 @@ button {
   opacity: 0.25;
 }
 
-.mixer-shared {
-  margin-left: auto;
-  color: #8f9c95;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-}
-
-.mixer-description {
-  margin: -3px 0 11px 23px;
-  color: #7f868e;
-  font-size: 11px;
-}
-
 .audio-track-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .audio-track {
   min-width: 0;
+  padding: 9px 10px 10px;
+  border: 1px solid #2d3238;
+  border-radius: 7px;
+  background: #1b1e22;
 }
 
 .audio-track-heading,
 .audio-track-name,
+.audio-meter-row,
 .audio-controls {
   display: flex;
   align-items: center;
@@ -1130,53 +1103,103 @@ button {
 
 .audio-track-heading {
   justify-content: space-between;
+  gap: 8px;
+}
+
+.audio-track-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.audio-device-popup {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  width: min(250px, calc(100vw - 48px));
+  max-height: calc(100vh - 16px);
+  flex-direction: column;
+  overflow-y: auto;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid #3b4046;
+  border-radius: 7px;
+  background: #202328;
+  box-shadow: 0 10px 24px #0008;
+  color: #d5d9dd;
+}
+
+.audio-device-popup-heading {
+  color: #e4e8e9;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.audio-device-select {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  color: #9299a0;
+  font-size: 10px;
+}
+
+
+
+.audio-device-error {
+  margin: 0;
+  color: #ff9b9b;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .audio-track-name {
+  min-width: 0;
   gap: 7px;
-  color: #c0c5ca;
-  font-size: 11px;
+  color: inherit;
+  font-size: 12px;
+  line-height: 15px;
 }
 
-.audio-track-name svg,
-.mute-button svg {
+.audio-track-name svg {
+  flex: 0 0 auto;
+}
+
+.audio-track-name svg {
   width: 13px;
   height: 13px;
   color: #8f979f;
-}
-
-.mute-button {
-  display: grid;
-  width: 22px;
-  height: 21px;
-  place-items: center;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.mute-button:hover {
-  background: #2b2e33;
-}
-
-.mute-button--muted svg {
-  color: #6e747b;
 }
 
 .audio-track--muted .audio-track-name {
   color: #798087;
 }
 
+.audio-meter-row {
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.audio-control-label {
+  width: 58px;
+  flex: 0 0 auto;
+  color: #9299a0;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .audio-controls {
   gap: 7px;
-  margin-top: 5px;
+  margin-top: 9px;
 }
 
 .audio-meter {
-  width: 34px;
-  height: 4px;
-  flex: 0 0 auto;
+  width: auto;
+  height: 5px;
+  flex: 1;
   overflow: hidden;
   border-radius: 3px;
   background: #34383d;
@@ -1187,6 +1210,7 @@ button {
   height: 100%;
   border-radius: inherit;
   background: #83d6b5;
+  transition: width 60ms linear;
 }
 
 .audio-track--muted .audio-meter span {
@@ -1213,8 +1237,9 @@ button {
 }
 
 .volume-value {
-  width: 20px;
-  color: #858c94;
+  width: 30px;
+  flex: 0 0 auto;
+  color: #9299a0;
   font-size: 10px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1234,4 +1259,183 @@ button {
     grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr);
     gap: 12px;
   }
+}
+
+.dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.dropdown::after {
+  position: absolute;
+  top: calc(50% - 6px);
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid #aab1b8;
+  border-bottom: 1.5px solid #aab1b8;
+  content: "";
+  pointer-events: none;
+  transform: rotate(45deg);
+}
+
+.dropdown--loading::after {
+  display: none;
+}
+
+.dropdown-select {
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 0 32px 0 7px;
+  border: 1px solid #3b4046;
+  border-radius: 5px;
+  outline: none;
+  appearance: none;
+  background: #17191d;
+  color: #e4e8e9;
+  font-size: 11px;
+  color-scheme: dark;
+}
+
+.dropdown-select:focus {
+  border-color: #668c7a;
+  box-shadow: 0 0 0 2px #91e5c51f;
+}
+
+.dropdown-select:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.dropdown-loader {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #50565d;
+  border-top-color: #a2e8cb;
+  border-radius: 50%;
+  animation: dropdown-spin 700ms linear infinite;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+@keyframes dropdown-spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-loader {
+    animation-duration: 1800ms;
+  }
+}
+
+.icon-button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid #373c42;
+  border-radius: 5px;
+  background: #202328;
+  color: #8f979f;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.icon-button svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.icon-button:hover:not(:disabled),
+.icon-button--active {
+  border-color: #3a5449;
+  background: #202923;
+  color: #b1edd2;
+}
+
+.icon-button--danger:hover:not(:disabled),
+.icon-button--alert:hover:not(:disabled) {
+  border-color: #693c40;
+  background: #392629;
+  color: #ff979b;
+}
+
+.icon-button--alert {
+  border-color: #59403e;
+  color: #ec7777;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid #91e5c5;
+  outline-offset: 2px;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.icon-button.section-reload-button {
+  width: 28px;
+  height: 28px;
+}
+
+.inspector-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.record-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.record-start-button {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 16px;
+  border: 1px solid #693c40;
+  border-radius: 7px;
+  background: #392629;
+  color: #ffb3b6;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 590;
+}
+
+.record-start-button svg {
+  width: 13px;
+  height: 13px;
+  color: #ff646b;
+}
+
+.record-start-button:hover:not(:disabled) {
+  background: #47292d;
+}
+
+.record-start-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.action-button--recording {
+  border-color: #693c40;
+  color: #ffb3b6;
 }

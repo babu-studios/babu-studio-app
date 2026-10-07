@@ -7,6 +7,7 @@ declare global {
       getMediaCoreStatus(): Promise<MediaCoreStatus>;
       getDesktopCaptureSources(): Promise<DesktopCaptureSourcesResult>;
       requestCameraAccess(): Promise<boolean>;
+      requestMicrophoneAccess(): Promise<boolean>;
     };
   }
 }

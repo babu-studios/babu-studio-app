@@ -27,16 +27,24 @@ app.whenReady().then(async () => {
     const isAppOrigin = origin.startsWith("file://")
       || origin.startsWith("http://localhost:")
       || origin.startsWith("http://127.0.0.1:");
-    const requestsVideo = permission === "media"
+    const requestsMedia = permission === "media"
       && "mediaTypes" in details
-      && details.mediaTypes?.includes("video");
-    if (!isAppOrigin || !requestsVideo) {
+      && details.mediaTypes?.some((mediaType) => mediaType === "audio" || mediaType === "video");
+    if (!isAppOrigin || !requestsMedia) {
       callback(false);
       return;
     }
     if (process.platform === "darwin") {
-      void systemPreferences.askForMediaAccess("camera").then(callback).catch((error: unknown) => {
-        console.error("Unable to request camera permission:", error);
+      const mediaTypes = details.mediaTypes ?? [];
+      void Promise.all([
+        ...(mediaTypes.includes("audio")
+          ? [systemPreferences.askForMediaAccess("microphone")]
+          : []),
+        ...(mediaTypes.includes("video")
+          ? [systemPreferences.askForMediaAccess("camera")]
+          : []),
+      ]).then((permissions) => callback(permissions.every(Boolean))).catch((error: unknown) => {
+        console.error("Unable to request media permission:", error);
         callback(false);
       });
       return;

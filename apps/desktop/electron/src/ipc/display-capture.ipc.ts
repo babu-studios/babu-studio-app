@@ -9,6 +9,13 @@ export function registerDisplayCaptureIpc(): void {
     return systemPreferences.askForMediaAccess("camera");
   });
 
+  ipcMain.handle("microphone-capture:request-access", async (): Promise<boolean> => {
+    if (process.platform !== "darwin") {
+      return true;
+    }
+    return systemPreferences.askForMediaAccess("microphone");
+  });
+
   ipcMain.handle("desktop-capture:get-sources", async (): Promise<DesktopCaptureSourcesResult> => {
     const permissionStatus = process.platform === "darwin"
       ? systemPreferences.getMediaAccessStatus("screen")

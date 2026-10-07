@@ -38,7 +38,8 @@
     "mac": {
       "category": "public.app-category.video",
       "extendInfo": {
-        "NSCameraUsageDescription": "DUI Studio uses camera access to show connected cameras and capture cards in your scene preview."
+        "NSCameraUsageDescription": "DUI Studio uses camera access to show connected cameras and capture cards in your scene preview.",
+        "NSMicrophoneUsageDescription": "DUI Studio uses microphone access to list and capture your selected audio input."
       }
     }
   }
