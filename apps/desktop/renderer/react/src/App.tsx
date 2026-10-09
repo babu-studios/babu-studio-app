@@ -12,7 +12,7 @@ import { createPortal } from "react-dom";
 import { Dropdown } from "./components/common/Dropdown";
 import { IconButton } from "./components/common/IconButton";
 import type { DesktopCaptureSource } from "@shared/types/capture";
-import type { PostProcessingState, RecordingExport, RecordingScene } from "@shared/types/media";
+import type { PostProcessingState, RecordingExport, RecordingMode, RecordingScene } from "@shared/types/media";
 
 type OutputId = "landscape" | "portrait";
 type LayerTransforms = Record<OutputId, LayerTransform>;
@@ -38,6 +38,7 @@ type IconName =
   | "speaker"
   | "speaker-muted"
   | "trash"
+  | "export"
   | "plus";
 
 type AudioTrack = {
@@ -146,6 +147,11 @@ function formatRecordingExports(exports: RecordingExport[] | undefined): string 
   }).join(" · ");
 }
 
+function describeExportSelection(modes: RecordingMode[]): string {
+  const names = modes.map((mode) => mode === "HORIZONTAL" ? "horizontal" : "vertical");
+  return names.length === 2 ? "horizontal and vertical layouts" : `${names[0] ?? "selected"} layout`;
+}
+
 const CAPTURE_RESOLUTIONS: CaptureResolution[] = [
   { id: "720p", label: "HD 720p", width: 1280, height: 720 },
   { id: "1080p", label: "Full HD 1080p", width: 1920, height: 1080 },
@@ -160,8 +166,7 @@ let nextLayerId = 1;
 
 const LAYER_OPTIONS: LayerOption[] = [
   { name: "Camera Device", description: "Add a connected webcam or camera.", icon: "camera", kind: "camera-device" },
-  { name: "Display Capture", description: "Capture a monitor or application window.", icon: "landscape", kind: "display-capture" },
-  { name: "Capture Card", description: "Capture a game or application window.", icon: "gameplay", kind: "game-capture" },
+  { name: "Capture Card", description: "Record gameplay from a capture card.", icon: "gameplay", kind: "game-capture" },
 ];
 
 const STUDIO_STATE_STORAGE_KEY = "dui-studio.studio-state.v1";
@@ -239,7 +244,7 @@ const ICON_NAMES: IconName[] = [
 ];
 const SCENE_APPEARANCES: SceneAppearance[] = ["gameplay", "just-chatting", "starting-soon", "custom"];
 const LAYER_KINDS: LayerKind[] = [
-  "gameplay", "camera", "alerts", "camera-device", "display-capture", "game-capture",
+  "gameplay", "camera", "alerts", "camera-device", "game-capture",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -704,6 +709,12 @@ function Icon({ name, className = "" }: { name: IconName; className?: string }) 
     trash: (
       <>
         <path d="M3.5 6h17M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6M14 10v6" />
+      </>
+    ),
+    export: (
+      <>
+        <path d="M12 15V3m-5 5 5-5 5 5" />
+        <path d="M5 13v7h14v-7" />
       </>
     ),
     plus: <path d="M12 5v14M5 12h14" />,
@@ -1270,6 +1281,7 @@ export default function App() {
   const [draggedLayerId, setDraggedLayerId] = useState<LayerId | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<LayerId | null>(null);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>(savedAudioMixer.tracks);
+  const [exportModes, setExportModes] = useState<RecordingMode[]>(["HORIZONTAL", "VERTICAL"]);
   const [previewEnabled, setPreviewEnabled] = useState<Record<OutputId, boolean>>({
     landscape: true,
     portrait: true,
@@ -1277,6 +1289,7 @@ export default function App() {
   const [recordingActive, setRecordingActive] = useState(false);
   const [recordingBusy, setRecordingBusy] = useState(false);
   const [recordingNotice, setRecordingNotice] = useState<{ error: boolean; text: string } | null>(null);
+  const [recordingErrorToast, setRecordingErrorToast] = useState<string | null>(null);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [postProcessingState, setPostProcessingState] = useState<PostProcessingState>("NOT_STARTED");
   const [recordingExports, setRecordingExports] = useState<RecordingExport[]>([]);
@@ -2111,6 +2124,21 @@ export default function App() {
       }, 0) / recordingExports.length)
       : 0;
   useEffect(() => {
+    if (!recordingNotice?.error) {
+      setRecordingErrorToast(null);
+      return;
+    }
+
+    setRecordingErrorToast(recordingNotice.text);
+    if (postProcessingState === "ERROR") {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setRecordingErrorToast(null), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [recordingNotice, postProcessingState]);
+
+  useEffect(() => {
     if (!isRecordingActive && postProcessingState !== "PROCESSING") {
       return;
     }
@@ -2135,14 +2163,14 @@ export default function App() {
               error: false,
               text: currentExport
                 ? `Exporting ${currentExport.mode === "HORIZONTAL" ? "horizontal" : "vertical"} layout…`
-                : "Exporting horizontal, then vertical layout…",
+                : "Preparing selected layout exports…",
             });
           } else if (status.postProcessingState === "COMPLETED") {
             setRecordingNotice({
               error: Boolean(status.error),
               text: status.error
                 ? `${status.error} ${formatRecordingExports(status.exports)}`
-                : `Both layouts saved: ${formatRecordingExports(status.exports)}`,
+                : `Selected layout exports saved: ${formatRecordingExports(status.exports)}`,
             });
           } else if (status.postProcessingState === "ERROR") {
             setRecordingNotice({
@@ -2191,6 +2219,10 @@ export default function App() {
     if (recordingActionInFlightRef.current || recordingBusy || isRecordingActive) {
       return;
     }
+    if (exportModes.length === 0) {
+      setRecordingNotice({ error: true, text: "Select at least one export layout before recording." });
+      return;
+    }
     const enabledLayers = currentLayers.filter((layer) => layer.enabled);
     if (!currentScene) {
       setRecordingNotice({ error: true, text: "Create or select a shared scene before starting a recording." });
@@ -2202,7 +2234,7 @@ export default function App() {
     }
     const sourceLayers = enabledLayers.filter((layer) => layer.kind === "game-capture" || layer.kind === "camera-device");
     if (sourceLayers.length === 0) {
-      setRecordingNotice({ error: true, text: "Add a capture card or camera to the shared scene to export both layouts." });
+      setRecordingNotice({ error: true, text: "Add a capture card or camera to the shared scene before recording." });
       return;
     }
     const sourceDeviceName = (layer: StudioLayer) =>
@@ -2287,6 +2319,7 @@ export default function App() {
         captureWidth: captureSize?.width,
         captureHeight: captureSize?.height,
         mode: "HORIZONTAL",
+        exportModes,
         fps: 60,
         gameVolume: gameAudioDevice
           ? audioTracks.some((track) => track.id === "capture-card") ? trackVolume("capture-card") : 1
@@ -2332,7 +2365,7 @@ export default function App() {
           ? {
             error: result.postProcessingState === "ERROR",
             text: result.postProcessingState === "PROCESSING"
-              ? `Source saved (${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB). Exporting horizontal, then vertical...`
+              ? `Source saved (${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB). Exporting ${describeExportSelection(exportModes)}...`
               : result.postProcessingState === "ERROR"
                 ? `Source saved, but export failed: ${result.error ?? "Project metadata could not be saved."} ${formatRecordingExports(result.exports)}`
                 : `Saved ${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB: ${result.filePath}`,
@@ -2628,7 +2661,9 @@ export default function App() {
           <button
             className={`action-button action-button--record${recordingActive ? " action-button--recording" : ""}`}
             disabled={recordingBusy || postProcessingState === "PROCESSING"}
-            title={recordingActive ? "Stop the current recording" : "Start recording the shared scene to both layouts"}
+            title={recordingActive
+              ? "Stop the current recording"
+              : `Record and export the shared scene to ${describeExportSelection(exportModes)}`}
             onClick={() => {
               if (recordingActive) {
                 void stopRecording();
@@ -2642,6 +2677,7 @@ export default function App() {
           </button>
           {(isRecordingActive || (
             recordingNotice
+            && !recordingNotice.error
             && postProcessingState !== "PROCESSING"
             && postProcessingState !== "COMPLETED"
           )) && (
@@ -2650,25 +2686,41 @@ export default function App() {
                 <strong className="recording-timer">{formatRecordingTime(recordingElapsedMs)}</strong>
               )}
               {recordingNotice
+                && !recordingNotice.error
                 && postProcessingState !== "PROCESSING"
                 && postProcessingState !== "COMPLETED" && (
-                <span className={`record-notice${recordingNotice.error ? " record-notice--error" : ""}`}>
+                <span className="record-notice">
                   {recordingNotice.text}
                 </span>
-              )}
-              {postProcessingState === "ERROR" && (
-                <button
-                  className="record-retry-button"
-                  disabled={recordingBusy}
-                  onClick={() => void retryRecordingExport()}
-                >
-                  Retry export
-                </button>
               )}
             </div>
           )}
         </div>
       </header>
+
+      {recordingErrorToast && (
+        <div className="recording-error-toast" role="alert">
+          <span className="recording-error-toast-icon" aria-hidden="true">!</span>
+          <p className="recording-error-toast-message">{recordingErrorToast}</p>
+          {postProcessingState === "ERROR" ? (
+            <button
+              className="recording-error-toast-action"
+              disabled={recordingBusy}
+              onClick={() => void retryRecordingExport()}
+            >
+              Retry export
+            </button>
+          ) : (
+            <button
+              className="recording-error-toast-dismiss"
+              aria-label="Dismiss error message"
+              onClick={() => setRecordingErrorToast(null)}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="studio-layout">
         <aside className="inspector" ref={inspectorRef} aria-label="Studio configuration">
@@ -2693,6 +2745,48 @@ export default function App() {
               </IconButton>
             </div>
           </div>
+
+          <section className="inspector-section export-selection-section">
+            <div className="export-selection-heading">
+              <div className="section-title">
+                <Icon name="export" />
+                <h3>Export/Record Layout</h3>
+              </div>
+              <p className="export-format-hint">Choose one or both. Your source recording is shared.</p>
+            </div>
+            <div className="export-format-options" role="group" aria-label="Layouts to export">
+              {([
+                { mode: "HORIZONTAL", name: "Horizontal", ratio: "16:9" },
+                { mode: "VERTICAL", name: "Vertical", ratio: "9:16" },
+              ] as const).map(({ mode, name, ratio }) => {
+                const selected = exportModes.includes(mode);
+                return (
+                  <label
+                    className={`export-format-option${selected ? " export-format-option--selected" : ""}`}
+                    key={mode}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={recordingBusy
+                        || isRecordingActive
+                        || postProcessingState === "PROCESSING"
+                        || (selected && exportModes.length === 1)}
+                      onChange={() => setExportModes((current) => (
+                        current.includes(mode)
+                          ? current.length > 1 ? current.filter((entry) => entry !== mode) : current
+                          : [...current, mode]
+                      ))}
+                    />
+                    <span className="export-format-copy">
+                      <strong>{name}</strong>
+                      <small>{ratio} · MP4</small>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
 
           <section className="inspector-section">
             <div className="section-title">
@@ -2777,7 +2871,7 @@ export default function App() {
               <div className="layer-add-wrap" ref={layerMenuRef}>
                 <button
                   className="text-icon-button"
-                  title={currentScene ? "Add layer: camera, display capture or capture card" : "Select a scene to add layers"}
+                  title={currentScene ? "Add layer: camera or capture card" : "Select a scene to add layers"}
                   aria-label="Add layer"
                   aria-haspopup="menu"
                   aria-expanded={layerMenuOpen}
@@ -3410,7 +3504,7 @@ export default function App() {
             </div>
             <p id="export-progress-description" className="export-progress-description">
               {exportsCompleted
-                ? "Both layouts have been saved successfully."
+                ? "Selected layout exports are ready."
                 : activeExport
                   ? `Rendering ${activeExport.mode === "HORIZONTAL" ? "Landscape" : "Portrait"} layout…`
                   : "Preparing the video exports…"}
@@ -3430,21 +3524,21 @@ export default function App() {
               <span style={{ width: `${overallExportProgress}%` }} />
             </div>
             <div className="export-progress-outputs">
-              {(["HORIZONTAL", "VERTICAL"] as const).map((mode) => {
-                const entry = recordingExports.find((candidate) => candidate.mode === mode);
+              {recordingExports.map((entry) => {
+                const mode = entry.mode;
                 const output = mode === "HORIZONTAL" ? OUTPUTS[0] : OUTPUTS[1];
-                const status = entry?.state === "COMPLETED"
+                const status = entry.state === "COMPLETED"
                   ? "Completed"
-                  : entry?.state === "ERROR"
+                  : entry.state === "ERROR"
                     ? "Failed"
-                    : entry?.state === "PROCESSING"
+                    : entry.state === "PROCESSING"
                       ? "Rendering"
                       : "Waiting";
-                const stateClass = entry?.state === "COMPLETED"
+                const stateClass = entry.state === "COMPLETED"
                   ? "complete"
-                  : entry?.state === "PROCESSING"
+                  : entry.state === "PROCESSING"
                     ? "active"
-                    : entry?.state === "ERROR"
+                    : entry.state === "ERROR"
                       ? "error"
                       : "waiting";
                 return (
@@ -3461,7 +3555,7 @@ export default function App() {
                         {status}
                       </span>
                     </div>
-                    {exportsCompleted && entry?.path && (
+                    {exportsCompleted && entry.path && (
                       <div className="export-progress-path">
                         <span>Saved to</span>
                         <code>{entry.path}</code>

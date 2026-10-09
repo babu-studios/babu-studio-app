@@ -59,6 +59,7 @@ export type StartRecordingRequest = {
   microphoneEnabled?: boolean;
   captureWidth?: number;
   captureHeight?: number;
+  exportModes?: RecordingMode[];
   scene: RecordingScene;
 };
 

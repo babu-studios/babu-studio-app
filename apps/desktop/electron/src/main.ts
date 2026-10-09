@@ -12,6 +12,10 @@ const recording = new RecordingService(mediaCore);
 app.setName("DUI Studio");
 
 function getMediaCorePath(): string {
+  const configuredPath = process.env.DUI_STUDIO_MEDIA_CORE_PATH;
+  if (configuredPath) {
+    return configuredPath;
+  }
   const executable = process.platform === "win32" ? "creator-media-core.exe" : "creator-media-core";
   if (app.isPackaged) {
     return join(process.resourcesPath, "media-core", executable);
@@ -54,10 +58,48 @@ app.whenReady().then(async () => {
     callback(true);
   });
 
+  let mediaCoreReady = false;
   try {
     await mediaCore.start(getMediaCorePath());
+    mediaCoreReady = true;
   } catch (error) {
     console.error("Unable to start the C++ media core:", error);
+  }
+
+  if (process.env.DUI_STUDIO_SYNTHETIC_FLOW_TEST === "1") {
+    try {
+      if (!mediaCoreReady) {
+        throw new Error("The media core did not start; cannot run the synthetic flow test.");
+      }
+      const durationMs = Number(process.env.DUI_STUDIO_FLOW_TEST_DURATION_MS ?? 60_000);
+      const exportModes = (process.env.DUI_STUDIO_FLOW_TEST_EXPORTS ?? "HORIZONTAL,VERTICAL")
+        .split(",")
+        .map((mode) => mode.trim())
+        .filter((mode): mode is "HORIZONTAL" | "VERTICAL" => mode === "HORIZONTAL" || mode === "VERTICAL");
+      const outputDirectory = process.env.DUI_STUDIO_FLOW_TEST_OUTPUT_DIR;
+      if (!outputDirectory) {
+        throw new Error("DUI_STUDIO_FLOW_TEST_OUTPUT_DIR must point to a unique test output directory.");
+      }
+      const result = await recording.runSyntheticFlowTest(
+        durationMs,
+        outputDirectory,
+        exportModes,
+        (elapsedMs) => console.log(`[recording-flow-test] Recording ${Math.floor(elapsedMs / 1000)}s/${Math.ceil(durationMs / 1000)}s`),
+      );
+      console.log(`[recording-flow-test] RESULT ${JSON.stringify(result)}`);
+    } catch (error) {
+      console.error("[recording-flow-test] FAILED", error);
+      try {
+        await recording.finishForShutdown();
+      } catch (shutdownError) {
+        console.error("[recording-flow-test] Cleanup failed", shutdownError);
+      }
+      process.exitCode = 1;
+    } finally {
+      allowQuit = true;
+      app.quit();
+    }
+    return;
   }
 
   createMainWindow();

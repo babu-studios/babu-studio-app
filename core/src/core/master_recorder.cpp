@@ -159,13 +159,11 @@ bool MasterRecorder::open_encoder(Track& track, std::string& error) {
       ctx->color_range = AVCOL_RANGE_MPEG;
       if (track.synthetic || attempt_codec == software_video_codec) {
         ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+        av_opt_set(ctx->priv_data, "preset", "veryfast", 0);
       } else if (attempt == 0) {
         ctx->pix_fmt = AV_PIX_FMT_VIDEOTOOLBOX;
         ctx->sw_pix_fmt = AV_PIX_FMT_NV12;
         track.zero_copy = true;
-      } else if (attempt_codec == software_video_codec) {
-        ctx->pix_fmt = AV_PIX_FMT_YUV420P;
-        av_opt_set(ctx->priv_data, "preset", "veryfast", 0);
       } else {
         ctx->pix_fmt = AV_PIX_FMT_NV12;
       }

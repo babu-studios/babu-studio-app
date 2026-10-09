@@ -2,6 +2,7 @@ import { app, systemPreferences } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import type { Readable } from "node:stream";
 import type {
   NativeCaptureDevice,
@@ -32,6 +33,11 @@ const CAPTURE_SIZES = {
 type ProjectMetadata = Record<string, unknown> & {
   status: string;
   postProcessingStatus: PostProcessingState;
+};
+
+type RecordingStartOptions = {
+  outputDirectory?: string;
+  synthetic?: boolean;
 };
 
 function failure(request: StartRecordingRequest, error: string): RecordingResult {
@@ -170,19 +176,115 @@ export class RecordingService {
   private finalizedResult?: RecordingResult;
   private stopResult?: RecordingResult;
   private postProcessingProcess?: FfmpegProcess;
+  private selectedExportModes: RecordingMode[] = ["HORIZONTAL", "VERTICAL"];
 
   constructor(private readonly mediaCore: MediaCoreService) {}
 
   async start(request: StartRecordingRequest): Promise<RecordingResult> {
+    return this.startWithOptions(request, {});
+  }
+
+  async runSyntheticFlowTest(
+    durationMs: number,
+    outputDirectory: string,
+    exportModes: RecordingMode[],
+    onProgress: (elapsedMs: number) => void,
+  ): Promise<RecordingResult> {
+    if (!Number.isInteger(durationMs) || durationMs < 1_000 || durationMs > 3_600_000) {
+      throw new Error("Synthetic flow-test duration must be between 1,000 and 3,600,000 milliseconds.");
+    }
+    const recordingScene: RecordingScene = {
+      scene: { id: "synthetic-flow-test", name: "Flow Test", appearance: "gameplay" },
+      layers: [
+        {
+          kind: "game-capture",
+          enabled: true,
+          deviceId: "synthetic-game",
+          captureResolution: "1080p",
+          crop: { top: 0, right: 0, bottom: 0, left: 0 },
+          sourceDimensions: { width: 1920, height: 1080 },
+          transforms: {
+            landscape: { x: 0, y: 0, width: 100, height: 100 },
+            portrait: { x: 0, y: 0, width: 100, height: 100 },
+          },
+        },
+        {
+          kind: "camera-device",
+          enabled: true,
+          deviceId: "synthetic-camera",
+          captureResolution: "720p",
+          crop: { top: 0, right: 0, bottom: 0, left: 0 },
+          sourceDimensions: { width: 1280, height: 720 },
+          transforms: {
+            landscape: { x: 72, y: 72, width: 24, height: 24 },
+            portrait: { x: 38, y: 72, width: 24, height: 16 },
+          },
+        },
+      ],
+    };
+    const request: StartRecordingRequest = {
+      mode: "HORIZONTAL",
+      fps: 60,
+      gameVolume: 1,
+      microphoneVolume: 1,
+      captureCard: "synthetic-game",
+      camera: "synthetic-camera",
+      gameAudio: "synthetic-game-audio",
+      microphone: "synthetic-microphone",
+      microphoneEnabled: true,
+      exportModes,
+      scene: recordingScene,
+    };
+    const started = await this.startWithOptions(request, { outputDirectory, synthetic: true });
+    if (!started.success) {
+      throw new Error(started.error || "Synthetic recording could not start.");
+    }
+
+    const startedAt = performance.now();
+    while (performance.now() - startedAt < durationMs) {
+      const elapsedMs = performance.now() - startedAt;
+      onProgress(Math.min(durationMs, elapsedMs));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1_000, durationMs - elapsedMs)));
+    }
+    onProgress(durationMs);
+
+    const stopped = await this.stop();
+    if (!stopped.success) {
+      throw new Error(stopped.error || "Synthetic recording could not be finalized.");
+    }
+    if (this.postProcessingPromise) {
+      await this.postProcessingPromise;
+    }
+    const result = this.withPostProcessing(stopped);
+    if (result.postProcessingState !== "COMPLETED"
+      || result.exports?.some((entry) => entry.state !== "COMPLETED")) {
+      throw new Error(result.error || "One or more synthetic layout exports failed.");
+    }
+    return result;
+  }
+
+  private async startWithOptions(
+    request: StartRecordingRequest,
+    options: RecordingStartOptions,
+  ): Promise<RecordingResult> {
+    const availableModes: RecordingMode[] = ["HORIZONTAL", "VERTICAL"];
+    const requestedModes = request.exportModes ?? availableModes;
+    if (!Array.isArray(requestedModes)
+      || requestedModes.length === 0
+      || requestedModes.some((mode) => !availableModes.includes(mode))) {
+      return failure(request, "Select at least one valid export layout.");
+    }
+    const exportModes = availableModes.filter((mode) => requestedModes.includes(mode));
+    const sessionRequest = { ...request, exportModes };
     if (this.active || this.startPromise) {
-      return failure(request, "A recording is already in progress.");
+      return failure(sessionRequest, "A recording is already in progress.");
     }
     if (this.postProcessingState === "PROCESSING") {
-      return failure(request, "Wait for both layout exports to finish before starting another recording.");
+      return failure(sessionRequest, "Wait for the selected layout exports to finish before starting another recording.");
     }
     this.stopResult = undefined;
     this.active = true;
-    const startPromise = this.beginRecording(request);
+    const startPromise = this.beginRecording(sessionRequest, options);
     this.startPromise = startPromise;
     try {
       return await startPromise;
@@ -193,10 +295,13 @@ export class RecordingService {
     }
   }
 
-  private async beginRecording(request: StartRecordingRequest): Promise<RecordingResult> {
+  private async beginRecording(
+    request: StartRecordingRequest,
+    options: RecordingStartOptions,
+  ): Promise<RecordingResult> {
     let coreStarted = false;
     try {
-      if (process.platform === "darwin") {
+      if (!options.synthetic && process.platform === "darwin") {
         const needsCamera = Boolean(request.captureCard || request.camera);
         const needsMic = Boolean(request.gameAudio || request.microphoneEnabled !== false);
         if (needsCamera && !(await systemPreferences.askForMediaAccess("camera"))) {
@@ -210,11 +315,13 @@ export class RecordingService {
       }
 
       const recordingId = new Date().toISOString().replace(/[:.]/g, "-");
-      const directory = join(app.getPath("videos"), "DUI Studio", `recording-${recordingId}`);
+      const directory = options.outputDirectory
+        ?? join(app.getPath("videos"), "DUI Studio", `recording-${recordingId}`);
       await mkdir(join(directory, "exports"), { recursive: true });
       this.projectDirectory = directory;
       this.projectFile = join(directory, "project.json");
       this.postProcessingState = "NOT_STARTED";
+      this.selectedExportModes = request.exportModes ?? ["HORIZONTAL", "VERTICAL"];
       this.exportPath = null;
       this.exportPaths = {};
       this.exportStates = [];
@@ -226,6 +333,7 @@ export class RecordingService {
         createdAt: new Date().toISOString(),
         status: "STARTING",
         recordingMode: request.mode,
+        exportModes: request.exportModes,
         canvas: { horizontal: CANVAS.HORIZONTAL, vertical: CANVAS.VERTICAL, fps: request.fps },
         sources: {
           master: "master.mkv",
@@ -262,7 +370,7 @@ export class RecordingService {
       await this.writeProject();
 
       let nativeRequest = request;
-      if (process.platform === "darwin") {
+      if (!options.synthetic && process.platform === "darwin") {
         const nativeDevices = await this.mediaCore.listDevices();
         nativeRequest = {
           ...request,
@@ -274,7 +382,7 @@ export class RecordingService {
           microphone: request.microphone ? nativeDeviceId(request.microphone, "audio", nativeDevices) : undefined,
         };
       }
-      const result = await this.mediaCore.startRecording(directory, nativeRequest);
+      const result = await this.mediaCore.startRecording(directory, nativeRequest, options.synthetic);
       if (!result.success) {
         this.active = false;
         projectMetadata.status = "ERROR";
@@ -380,14 +488,17 @@ export class RecordingService {
     this.postProcessingState = "PROCESSING";
     this.postProcessingError = undefined;
     this.projectMetadata.postProcessingStartedAt = new Date().toISOString();
-    const horizontalPath = join(this.projectDirectory, "exports", "horizontal.mp4");
-    const verticalPath = join(this.projectDirectory, "exports", "vertical.mp4");
-    this.exportPaths = { HORIZONTAL: horizontalPath, VERTICAL: verticalPath };
-    this.exportPath = this.exportPaths[result.recordingMode] ?? this.exportPaths.HORIZONTAL ?? null;
-    this.exportStates = [
-      { mode: "HORIZONTAL", path: horizontalPath, state: "PENDING", progress: 0 },
-      { mode: "VERTICAL", path: verticalPath, state: "PENDING", progress: 0 },
-    ];
+    this.exportPaths = {};
+    const projectDirectory = this.projectDirectory;
+    if (!projectDirectory) {
+      throw new Error("The recording project directory is unavailable.");
+    }
+    this.exportStates = this.selectedExportModes.map((mode) => {
+      const path = join(projectDirectory, "exports", mode === "HORIZONTAL" ? "horizontal.mp4" : "vertical.mp4");
+      this.exportPaths[mode] = path;
+      return { mode, path, state: "PENDING", progress: 0 };
+    });
+    this.exportPath = this.exportPaths[result.recordingMode] ?? this.exportStates[0]?.path ?? null;
     this.projectMetadata.postProcessingStatus = this.postProcessingState;
     this.projectMetadata.exportFiles = { ...this.exportPaths };
     this.projectMetadata.exports = this.exportStates;

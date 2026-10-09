@@ -609,6 +609,75 @@ input[type="range"] {
   letter-spacing: 0.01em;
 }
 
+.export-selection-section {
+  padding-bottom: 13px;
+}
+
+.export-selection-heading .section-title {
+  margin-bottom: 0;
+}
+
+.export-format-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.export-format-option {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 1px solid #363b42;
+  border-radius: 7px;
+  background: #1b1e23;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.export-format-option:hover:not(:has(input:disabled)) {
+  border-color: #52645b;
+  background: #202620;
+}
+
+.export-format-option--selected {
+  border-color: #456552;
+  background: linear-gradient(135deg, #202a24, #1b201d);
+}
+
+.export-format-option input {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  accent-color: #91e5c5;
+}
+
+.export-format-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.export-format-copy strong {
+  color: #e2e7e5;
+  font-size: 10px;
+  font-weight: 630;
+}
+
+.export-format-copy small,
+.export-format-hint {
+  color: #89929a;
+  font-size: 9px;
+}
+
+.export-format-hint {
+  margin: 4px 0 9px;
+  line-height: 1.4;
+}
+
 .section-count {
   display: grid;
   width: 17px;
@@ -1643,23 +1712,75 @@ input[type="range"] {
   overflow-wrap: anywhere;
 }
 
-.record-notice--error {
-  color: #ff8b91;
+.recording-error-toast {
+  position: fixed;
+  z-index: 1100;
+  top: 78px;
+  right: 20px;
+  display: flex;
+  width: min(430px, calc(100vw - 32px));
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #724248;
+  border-left: 3px solid #ff7078;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #2a1d21, #21191c);
+  box-shadow: 0 12px 34px #0008;
+  color: #ffd9db;
 }
 
-.record-retry-button {
+.recording-error-toast-icon {
+  display: grid;
+  width: 19px;
+  height: 19px;
   flex: 0 0 auto;
-  border: 1px solid #555b63;
+  place-items: center;
+  border-radius: 50%;
+  background: #6b3037;
+  color: #ffe4e5;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.recording-error-toast-message {
+  min-width: 0;
+  flex: 1;
+  margin: 1px 0 0;
+  color: #ffd9db;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.recording-error-toast-action,
+.recording-error-toast-dismiss {
+  flex: 0 0 auto;
+  border: 1px solid #7c4d52;
   border-radius: 6px;
-  padding: 5px 8px;
-  background: #25282d;
-  color: #dce0e4;
+  padding: 5px 9px;
+  background: #3a252a;
+  color: #ffe0e2;
   cursor: pointer;
   font: inherit;
   font-size: 11px;
 }
 
-.record-retry-button:disabled {
+.recording-error-toast-dismiss {
+  padding: 1px 6px;
+  border-color: transparent;
+  background: transparent;
+  color: #dcaeb1;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.recording-error-toast-action:hover,
+.recording-error-toast-dismiss:hover {
+  background: #503037;
+}
+
+.recording-error-toast-action:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
