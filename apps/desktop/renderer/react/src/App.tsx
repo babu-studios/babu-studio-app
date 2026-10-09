@@ -12,8 +12,10 @@ import { createPortal } from "react-dom";
 import { Dropdown } from "./components/common/Dropdown";
 import { IconButton } from "./components/common/IconButton";
 import type { DesktopCaptureSource } from "@shared/types/capture";
+import type { PostProcessingState, RecordingExport, RecordingScene } from "@shared/types/media";
 
 type OutputId = "landscape" | "portrait";
+type LayerTransforms = Record<OutputId, LayerTransform>;
 type SceneId = string;
 type SceneAppearance = "gameplay" | "just-chatting" | "starting-soon" | "custom";
 type LayerId = string;
@@ -66,7 +68,7 @@ type StudioLayer = {
   captureResolution: CaptureResolutionId;
   crop: CropInsets;
   sourceDimensions: SourceDimensions | null;
-  transform: LayerTransform;
+  transforms: LayerTransforms;
 };
 
 type LayerTransform = { x: number; y: number; width: number; height: number };
@@ -87,10 +89,10 @@ type LayerOption = {
 };
 type PopupPosition = { left: number; top: number };
 type PersistedStudioState = {
-  selectedOutput: OutputId;
-  activeScenes: Record<OutputId, SceneId | null>;
-  scenesByOutput: Record<OutputId, Scene[]>;
+  activeScene: SceneId | null;
+  scenes: Scene[];
   layersByScene: Record<SceneId, StudioLayer[]>;
+  portraitPlacementVersion: number;
 };
 type CanvasResizeCorner = "bottom-left" | "bottom-right";
 type CanvasInteraction = {
@@ -123,10 +125,26 @@ type ElectronDesktopCaptureConstraints = MediaTrackConstraints & {
 };
 const BROWSER_DISPLAY_CAPTURE_ID = "__browser-display-capture__";
 
-const OUTPUTS: { id: OutputId; name: string; ratio: string; size: string; icon: IconName }[] = [
-  { id: "landscape", name: "Landscape", ratio: "16:9", size: "1920 × 1080", icon: "landscape" },
-  { id: "portrait", name: "Portrait", ratio: "9:16", size: "1080 × 1920", icon: "portrait" },
+const OUTPUTS: { id: OutputId; name: string; ratio: string; size: string; width: number; height: number; icon: IconName }[] = [
+  { id: "landscape", name: "Landscape", ratio: "16:9", size: "1920 × 1080", width: 1920, height: 1080, icon: "landscape" },
+  { id: "portrait", name: "Portrait", ratio: "9:16", size: "1080 × 1920", width: 1080, height: 1920, icon: "portrait" },
 ];
+
+function formatRecordingTime(milliseconds: number): string {
+  const totalSeconds = Math.floor(Math.max(0, milliseconds) / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+}
+
+function formatRecordingExports(exports: RecordingExport[] | undefined): string {
+  return (exports ?? []).map((entry) => {
+    const layout = entry.mode === "HORIZONTAL" ? "Horizontal" : "Vertical";
+    const detail = entry.error ? ` — ${entry.error}` : `: ${entry.path}`;
+    return `${layout} ${entry.state.toLowerCase()}${detail}`;
+  }).join(" · ");
+}
 
 const CAPTURE_RESOLUTIONS: CaptureResolution[] = [
   { id: "720p", label: "HD 720p", width: 1280, height: 720 },
@@ -147,6 +165,7 @@ const LAYER_OPTIONS: LayerOption[] = [
 ];
 
 const STUDIO_STATE_STORAGE_KEY = "dui-studio.studio-state.v1";
+const PORTRAIT_PLACEMENT_VERSION = 3;
 const AUDIO_MIXER_STORAGE_KEY = "dui-studio.audio-mixer.v1";
 
 type PersistedAudioMixer = {
@@ -359,7 +378,42 @@ function getDefaultLayerTransform(kind: LayerKind): LayerTransform {
   return { x: 38, y: 10, width: 24, height: 16 };
 }
 
-function parseStudioLayer(value: unknown): StudioLayer | null {
+function convertLandscapeTransformToPortrait(transform: LayerTransform): LayerTransform {
+  const landscape = OUTPUTS.find((output) => output.id === "landscape");
+  const portrait = OUTPUTS.find((output) => output.id === "portrait");
+  if (!landscape || !portrait) {
+    throw new Error("Landscape and Portrait output dimensions are required to convert layer placement.");
+  }
+
+  return {
+    x: transform.x * landscape.width / portrait.width,
+    y: transform.y * landscape.height / portrait.height,
+    width: transform.width * landscape.width / portrait.width,
+    height: transform.height * landscape.height / portrait.height,
+  };
+}
+
+function centerLayerTransform(transform: LayerTransform): LayerTransform {
+  return {
+    ...transform,
+    x: (100 - transform.width) / 2,
+    y: (100 - transform.height) / 2,
+  };
+}
+
+function createLayerTransforms(transform: LayerTransform): LayerTransforms {
+  const landscape = centerLayerTransform(transform);
+  return {
+    landscape,
+    portrait: centerLayerTransform(convertLandscapeTransformToPortrait(landscape)),
+  };
+}
+
+function getDefaultLayerTransforms(kind: LayerKind): LayerTransforms {
+  return createLayerTransforms(getDefaultLayerTransform(kind));
+}
+
+function parseStudioLayer(value: unknown, initializePortraitFromLandscape: boolean): StudioLayer | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -377,6 +431,14 @@ function parseStudioLayer(value: unknown): StudioLayer | null {
     return null;
   }
 
+  const legacyTransform = isLayerTransform(value.transform)
+    ? value.transform
+    : getDefaultLayerTransform(kind);
+  const savedTransforms = isRecord(value.transforms) ? value.transforms : {};
+  const landscapeTransform = isLayerTransform(savedTransforms.landscape)
+    ? savedTransforms.landscape
+    : legacyTransform;
+
   return {
     id,
     name: kind === "game-capture" && name === "Game Capture" ? "Capture Card" : name,
@@ -389,16 +451,21 @@ function parseStudioLayer(value: unknown): StudioLayer | null {
       : DEFAULT_CAPTURE_RESOLUTION,
     crop: isCropInsets(value.crop) ? value.crop : { ...DEFAULT_CROP_INSETS },
     sourceDimensions: isSourceDimensions(value.sourceDimensions) ? value.sourceDimensions : null,
-    transform: isLayerTransform(value.transform) ? value.transform : getDefaultLayerTransform(kind),
+    transforms: {
+      landscape: { ...landscapeTransform },
+      portrait: !initializePortraitFromLandscape && isLayerTransform(savedTransforms.portrait)
+        ? savedTransforms.portrait
+        : centerLayerTransform(convertLandscapeTransformToPortrait(landscapeTransform)),
+    },
   };
 }
 
 function loadPersistedStudioState(): PersistedStudioState {
   const emptyState: PersistedStudioState = {
-    selectedOutput: "landscape",
-    activeScenes: { landscape: null, portrait: null },
-    scenesByOutput: { landscape: [], portrait: [] },
+    activeScene: null,
+    scenes: [],
     layersByScene: {},
+    portraitPlacementVersion: PORTRAIT_PLACEMENT_VERSION,
   };
 
   try {
@@ -412,41 +479,44 @@ function loadPersistedStudioState(): PersistedStudioState {
       throw new Error("Saved studio state must be an object.");
     }
 
-    const scenesByOutput: Record<OutputId, Scene[]> = { landscape: [], portrait: [] };
+    const legacyScenesByOutput: Record<OutputId, Scene[]> = { landscape: [], portrait: [] };
     for (const output of OUTPUTS) {
       const scenes = isRecord(parsed.scenesByOutput) ? parsed.scenesByOutput[output.id] : null;
       if (Array.isArray(scenes)) {
-        scenesByOutput[output.id] = scenes.filter(isScene);
+        legacyScenesByOutput[output.id] = scenes.filter(isScene);
       }
     }
 
-    const sceneIds = new Set(Object.values(scenesByOutput).flat().map((scene) => scene.id));
+    const scenes = (Array.isArray(parsed.scenes) ? parsed.scenes.filter(isScene) : Object.values(legacyScenesByOutput).flat())
+      .filter((scene, index, allScenes) => allScenes.findIndex((candidate) => candidate.id === scene.id) === index);
+    const initializePortraitFromLandscape = parsed.portraitPlacementVersion !== PORTRAIT_PLACEMENT_VERSION;
+    const sceneIds = new Set(scenes.map((scene) => scene.id));
     const layersByScene: Record<SceneId, StudioLayer[]> = {};
     if (isRecord(parsed.layersByScene)) {
       for (const [sceneId, layers] of Object.entries(parsed.layersByScene)) {
         if (sceneIds.has(sceneId) && Array.isArray(layers)) {
           layersByScene[sceneId] = layers
-            .map(parseStudioLayer)
+            .map((layer) => parseStudioLayer(layer, initializePortraitFromLandscape))
             .filter((layer): layer is StudioLayer => layer !== null);
         }
       }
     }
 
-    const activeScenes: Record<OutputId, SceneId | null> = { landscape: null, portrait: null };
-    if (isRecord(parsed.activeScenes)) {
-      for (const output of OUTPUTS) {
-        const sceneId = parsed.activeScenes[output.id];
-        if (typeof sceneId === "string" && scenesByOutput[output.id].some((scene) => scene.id === sceneId)) {
-          activeScenes[output.id] = sceneId;
-        }
-      }
-    }
+    const selectedOutput = parsed.selectedOutput === "portrait" ? "portrait" : "landscape";
+    const legacyActiveScenes = isRecord(parsed.activeScenes) ? parsed.activeScenes : {};
+    const activeScene = typeof parsed.activeScene === "string" && sceneIds.has(parsed.activeScene)
+      ? parsed.activeScene
+      : [selectedOutput, "landscape", "portrait"]
+        .map((output) => legacyActiveScenes[output])
+        .find((sceneId): sceneId is string => typeof sceneId === "string" && sceneIds.has(sceneId))
+        ?? scenes[0]?.id
+        ?? null;
 
     return {
-      selectedOutput: parsed.selectedOutput === "portrait" ? "portrait" : "landscape",
-      activeScenes,
-      scenesByOutput,
+      activeScene,
+      scenes,
       layersByScene,
+      portraitPlacementVersion: PORTRAIT_PLACEMENT_VERSION,
     };
   } catch (error) {
     console.error("Could not load saved DUI Studio scenes and layers.", error);
@@ -456,7 +526,10 @@ function loadPersistedStudioState(): PersistedStudioState {
 
 function savePersistedStudioState(state: PersistedStudioState): void {
   try {
-    localStorage.setItem(STUDIO_STATE_STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STUDIO_STATE_STORAGE_KEY, JSON.stringify({
+      ...state,
+      portraitPlacementVersion: PORTRAIT_PLACEMENT_VERSION,
+    }));
   } catch (error) {
     console.error("Could not save DUI Studio scenes and layers.", error);
   }
@@ -478,6 +551,43 @@ const LAYER_SOURCE_LABELS: Record<LayerKind, string> = {
 };
 
 type DeviceOption = { id: string; name: string };
+
+function nativeCaptureDeviceName(name: string): string {
+  return name
+    .replace(/^default\s*-\s*/i, "")
+    .replace(/\s+\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, "")
+    .replace(/\s+\(built-in\)$/i, "")
+    .trim();
+}
+
+function normalizeAudioDeviceName(name: string): string {
+  return nativeCaptureDeviceName(name).toLocaleLowerCase();
+}
+
+function findAudioDeviceByName(name: string, devices: DeviceOption[]): DeviceOption | undefined {
+  const normalizedName = normalizeAudioDeviceName(name);
+  if (!normalizedName) {
+    return undefined;
+  }
+  const exactMatches = devices.filter((device) => normalizeAudioDeviceName(device.name) === normalizedName);
+  if (exactMatches.length === 1) {
+    return exactMatches[0];
+  }
+  if (exactMatches.length > 1) {
+    return undefined;
+  }
+  const partialMatches = devices.filter((device) => {
+    const normalizedDeviceName = normalizeAudioDeviceName(device.name);
+    return normalizedDeviceName.length > 0
+      && (normalizedDeviceName.includes(normalizedName) || normalizedName.includes(normalizedDeviceName));
+  });
+  return partialMatches.length === 1 ? partialMatches[0] : undefined;
+}
+
+function findBuiltInMicrophone(devices: DeviceOption[]): DeviceOption | undefined {
+  return devices.find((device) => normalizeAudioDeviceName(device.name) === "macbook air microphone")
+    ?? devices.find((device) => /\bbuilt[\s-]?in\b/i.test(device.name));
+}
 
 function isSupportedCaptureCard(device: DeviceOption): boolean {
   return device.name.toLocaleLowerCase().includes("elgato 4k s");
@@ -789,26 +899,24 @@ function MediaStreamVideo({
 
 function OutputPreview({
   output,
-  active,
   scene,
   layers,
-  guides,
+  previewEnabled,
   selectedLayerId,
   browserCaptureStreams,
-  onSelect,
   onSelectLayer,
+  onTogglePreview,
   onTransformChange,
   onSourceDimensionsChange,
 }: {
   output: (typeof OUTPUTS)[number];
-  active: boolean;
   scene: Scene | null;
   layers: StudioLayer[];
-  guides: boolean;
+  previewEnabled: boolean;
   selectedLayerId: LayerId | null;
   browserCaptureStreams: Record<LayerId, MediaStream>;
-  onSelect: () => void;
   onSelectLayer: (layerId: LayerId) => void;
+  onTogglePreview: () => void;
   onTransformChange: (layerId: LayerId, transform: LayerTransform) => void;
   onSourceDimensionsChange: (layerId: LayerId, dimensions: SourceDimensions) => void;
 }) {
@@ -819,7 +927,6 @@ function OutputPreview({
   function beginLayerInteraction(event: ReactPointerEvent<HTMLSpanElement>, layer: StudioLayer): void {
     event.preventDefault();
     event.stopPropagation();
-    onSelect();
     onSelectLayer(layer.id);
 
     const surface = surfaceRef.current;
@@ -836,7 +943,8 @@ function OutputPreview({
       : null;
     const sourceDimensions = layer.sourceDimensions ?? getCaptureResolution(layer.captureResolution);
     const cropFractions = getCropFractions(layer.crop, sourceDimensions.width, sourceDimensions.height);
-    const initialVisibleTransform = getCroppedLayerTransform(layer.transform, layer.crop, sourceDimensions);
+    const initialTransform = layer.transforms[output.id];
+    const initialVisibleTransform = getCroppedLayerTransform(initialTransform, layer.crop, sourceDimensions);
     interactionRef.current = {
       pointerId: event.pointerId,
       layerId: layer.id,
@@ -847,8 +955,8 @@ function OutputPreview({
       surfaceHeight: bounds.height,
       cropFractions,
       initialVisibleTransform,
-      initialTransform: layer.transform,
-      currentTransform: layer.transform,
+      initialTransform,
+      currentTransform: initialTransform,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -929,7 +1037,7 @@ function OutputPreview({
   const selectedSource = sourceLayers.find((layer) => layer.id === selectedLayerId);
   const selectedSourceTransform = selectedSource
     ? getCroppedLayerTransform(
-      dragTransform?.layerId === selectedSource.id ? dragTransform.transform : selectedSource.transform,
+      dragTransform?.layerId === selectedSource.id ? dragTransform.transform : selectedSource.transforms[output.id],
       selectedSource.crop,
       selectedSource.sourceDimensions ?? getCaptureResolution(selectedSource.captureResolution),
     )
@@ -948,24 +1056,35 @@ function OutputPreview({
     : null;
 
   return (
-    <button
-      className={`preview-card${active ? " preview-card--active" : ""}`}
-      onClick={onSelect}
-      aria-pressed={active}
-      aria-label={`Select ${output.name} ${output.ratio} output for configuration`}
+    <div
+      className={`preview-card${previewEnabled ? "" : " preview-card--paused"}`}
+      role="group"
+      aria-label={`${output.name} preview ${previewEnabled ? "enabled" : "paused"}. ${previewEnabled ? "Drag layers to place them for this layout." : "Recording is unaffected."}`}
     >
       <span className="preview-card-heading">
         <span className="preview-output-name">
           <Icon name={output.icon} />
           {output.name}
+          <span className="preview-ratio">{output.ratio}</span>
         </span>
-        <span className="preview-ratio">{output.ratio}</span>
+        <span className="preview-header-actions">
+          <IconButton
+            className="preview-visibility-button"
+            active={!previewEnabled}
+            title={`${previewEnabled ? "Disable" : "Enable"} ${output.name} preview`}
+            aria-label={`${previewEnabled ? "Disable" : "Enable"} ${output.name} preview`}
+            aria-pressed={!previewEnabled}
+            onClick={onTogglePreview}
+          >
+            <Icon name={previewEnabled ? "eye" : "eye-off"} />
+          </IconButton>
+        </span>
       </span>
       <span
         ref={surfaceRef}
-        className={`preview-surface preview-surface--${output.id} scene-${scene?.appearance ?? "empty"}`}
+        className={`preview-surface preview-surface--${output.id} scene-${scene?.appearance ?? "empty"}${previewEnabled ? "" : " preview-surface--paused"}`}
       >
-        {scene && visibleLayers.filter((layer) => layer.kind === "gameplay").map((layer) => (
+        {previewEnabled && scene && visibleLayers.filter((layer) => layer.kind === "gameplay").map((layer) => (
           <span className="game-art" key={layer.id} aria-hidden="true">
             <span className="game-sun" />
             <span className="game-horizon" />
@@ -974,19 +1093,21 @@ function OutputPreview({
             <span className="game-grid" />
           </span>
         ))}
-        {scene && visibleLayers.filter((layer) => layer.kind === "alerts").map((layer) => (
+        {previewEnabled && scene && visibleLayers.filter((layer) => layer.kind === "alerts").map((layer) => (
           <span className="alert-preview" key={layer.id}>
             ALERT PREVIEW
           </span>
         ))}
-        {scene && visibleLayers.filter((layer) => layer.kind === "camera").map((layer) => (
+        {previewEnabled && scene && visibleLayers.filter((layer) => layer.kind === "camera").map((layer) => (
           <span className="camera-preview" key={layer.id}>
             <span className="camera-avatar" />
             <span className="camera-label">CAM</span>
           </span>
         ))}
-        {scene && sourceLayers.map((layer, layerIndex) => {
-          const baseTransform = dragTransform?.layerId === layer.id ? dragTransform.transform : layer.transform;
+        {previewEnabled && scene && sourceLayers.map((layer, layerIndex) => {
+          const baseTransform = dragTransform?.layerId === layer.id
+            ? dragTransform.transform
+            : layer.transforms[output.id];
           const sourceDimensions = layer.sourceDimensions ?? getCaptureResolution(layer.captureResolution);
           const transform = getCroppedLayerTransform(baseTransform, layer.crop, sourceDimensions);
           const selected = selectedLayerId === layer.id;
@@ -1078,7 +1199,7 @@ function OutputPreview({
                   onClick={(event) => event.stopPropagation()}
                 />
               )}
-              {selected && cornerResizeHandlePositions && (
+              {previewEnabled && selected && cornerResizeHandlePositions && (
                 (["bottom-left", "bottom-right"] as const).map((corner) => (
                 <span
                   key={corner}
@@ -1103,25 +1224,30 @@ function OutputPreview({
             </Fragment>
           );
         })}
-        {guides && <span className="safe-area-guide" aria-hidden="true" />}
+        {!previewEnabled && (
+          <span className="preview-paused">
+            <Icon name="eye-off" />
+            <strong>Preview paused</strong>
+            <span>This layout will still be included in recordings.</span>
+          </span>
+        )}
       </span>
       <span className="preview-card-footer">
         <span>{output.size}</span>
-        <span className="preview-state">
-          <span className="preview-live-dot" />
-          PREVIEW
+        <span className={`preview-state${previewEnabled ? "" : " preview-state--paused"}`}>
+          <span className={`preview-live-dot${previewEnabled ? "" : " preview-live-dot--paused"}`} />
+          {previewEnabled ? "PREVIEW" : "PAUSED"}
         </span>
       </span>
-    </button>
+    </div>
   );
 }
 
 export default function App() {
   const [initialStudioState] = useState(loadPersistedStudioState);
-  const [selectedOutput, setSelectedOutput] = useState<OutputId>(initialStudioState.selectedOutput);
-  const [activeScenes, setActiveScenes] = useState<Record<OutputId, SceneId | null>>(initialStudioState.activeScenes);
-  const [scenesByOutput, setScenesByOutput] = useState<Record<OutputId, Scene[]>>(initialStudioState.scenesByOutput);
-  const [editingScene, setEditingScene] = useState<{ outputId: OutputId; sceneId: SceneId } | null>(null);
+  const [activeScene, setActiveScene] = useState<SceneId | null>(initialStudioState.activeScene);
+  const [scenes, setScenes] = useState<Scene[]>(initialStudioState.scenes);
+  const [editingScene, setEditingScene] = useState<SceneId | null>(null);
   const [sceneNameDraft, setSceneNameDraft] = useState("");
   const [layersByScene, setLayersByScene] = useState<Record<SceneId, StudioLayer[]>>(initialStudioState.layersByScene);
   const [selectedCanvasObject, setSelectedCanvasObject] = useState<{ sceneId: SceneId; layerId: LayerId } | null>(null);
@@ -1144,12 +1270,19 @@ export default function App() {
   const [draggedLayerId, setDraggedLayerId] = useState<LayerId | null>(null);
   const [dragOverLayerId, setDragOverLayerId] = useState<LayerId | null>(null);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>(savedAudioMixer.tracks);
-  const [showGuides, setShowGuides] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [recordMenuOpen, setRecordMenuOpen] = useState(false);
-  const [recordLayouts, setRecordLayouts] = useState<Record<OutputId, boolean>>({ landscape: true, portrait: false });
-  const [recordingLayouts, setRecordingLayouts] = useState<OutputId[]>([]);
-  const recordWrapRef = useRef<HTMLDivElement>(null);
+  const [previewEnabled, setPreviewEnabled] = useState<Record<OutputId, boolean>>({
+    landscape: true,
+    portrait: true,
+  });
+  const [recordingActive, setRecordingActive] = useState(false);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingNotice, setRecordingNotice] = useState<{ error: boolean; text: string } | null>(null);
+  const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
+  const [postProcessingState, setPostProcessingState] = useState<PostProcessingState>("NOT_STARTED");
+  const [recordingExports, setRecordingExports] = useState<RecordingExport[]>([]);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const recordingActionInFlightRef = useRef(false);
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [audioSettingsTrackId, setAudioSettingsTrackId] = useState("mic");
   const [audioTrackInputIds, setAudioTrackInputIds] = useState<Record<string, string>>(savedAudioMixer.trackInputIds);
@@ -1179,9 +1312,8 @@ export default function App() {
   const audioPlaybackRef = useRef<Record<string, HTMLAudioElement>>({});
   const browserCaptureStreamsRef = useRef<Record<LayerId, MediaStream>>({});
   const ignoreRenameBlur = useRef(false);
-  const currentOutput = OUTPUTS.find((output) => output.id === selectedOutput)!;
-  const currentScenes = scenesByOutput[selectedOutput];
-  const currentScene = currentScenes.find((scene) => scene.id === activeScenes[selectedOutput]) ?? null;
+  const currentScenes = scenes;
+  const currentScene = currentScenes.find((scene) => scene.id === activeScene) ?? null;
   const currentLayers = currentScene ? layersByScene[currentScene.id] ?? [] : [];
 
   useEffect(() => {
@@ -1399,8 +1531,13 @@ export default function App() {
   }, [audioSettingsOpen, audioSettingsTrackId]);
 
   useEffect(() => {
-    savePersistedStudioState({ selectedOutput, activeScenes, scenesByOutput, layersByScene });
-  }, [selectedOutput, activeScenes, scenesByOutput, layersByScene]);
+    savePersistedStudioState({
+      activeScene,
+      scenes,
+      layersByScene,
+      portraitPlacementVersion: PORTRAIT_PLACEMENT_VERSION,
+    });
+  }, [activeScene, scenes, layersByScene]);
 
   useEffect(() => () => {
     Object.values(browserCaptureStreamsRef.current).forEach((stream) => {
@@ -1569,11 +1706,6 @@ export default function App() {
     };
   }, [settingsLayerId]);
 
-  function getLayersForOutput(outputId: OutputId): StudioLayer[] {
-    const sceneId = activeScenes[outputId];
-    return sceneId ? layersByScene[sceneId] ?? [] : [];
-  }
-
   useEffect(() => {
     if (editingScene) {
       renameInputRef.current?.focus();
@@ -1740,7 +1872,7 @@ export default function App() {
   }, [layerMenuOpen, settingsLayerId]);
 
   function toggleLayer(layerId: LayerId): void {
-    const sceneId = activeScenes[selectedOutput];
+    const sceneId = activeScene;
     if (!sceneId) {
       return;
     }
@@ -1753,7 +1885,7 @@ export default function App() {
   }
 
   function deleteLayer(layerId: LayerId): void {
-    const sceneId = activeScenes[selectedOutput];
+    const sceneId = activeScene;
     if (!sceneId) {
       return;
     }
@@ -1771,6 +1903,22 @@ export default function App() {
       ...current,
       [sceneId]: (current[sceneId] ?? []).map((layer) => (
         layer.id === layerId ? { ...layer, ...update } : layer
+      )),
+    }));
+  }
+
+  function updateLayerTransform(
+    sceneId: SceneId,
+    layerId: LayerId,
+    outputId: OutputId,
+    transform: LayerTransform,
+  ): void {
+    setLayersByScene((current) => ({
+      ...current,
+      [sceneId]: (current[sceneId] ?? []).map((layer) => (
+        layer.id === layerId
+          ? { ...layer, transforms: { ...layer.transforms, [outputId]: transform } }
+          : layer
       )),
     }));
   }
@@ -1817,7 +1965,7 @@ export default function App() {
           deviceId: BROWSER_DISPLAY_CAPTURE_ID,
           captureResolution,
           sourceDimensions: getSourceDimensions(stream),
-          transform: { x: 0, y: 0, width: 100, height: 100 },
+          transforms: createLayerTransforms({ x: 0, y: 0, width: 100, height: 100 }),
         });
         stream.getVideoTracks()[0]?.addEventListener("ended", () => {
           setBrowserCaptureStream(layerId, null);
@@ -1835,7 +1983,7 @@ export default function App() {
       deviceId,
       captureResolution,
       sourceDimensions: null,
-      transform: { x: 0, y: 0, width: 100, height: 100 },
+      transforms: createLayerTransforms({ x: 0, y: 0, width: 100, height: 100 }),
     });
   }
 
@@ -1845,7 +1993,6 @@ export default function App() {
     layerKind: "camera-device" | "game-capture",
     deviceId: string,
     captureResolution: CaptureResolutionId,
-    fitToPreview = false,
     knownDevices: DeviceOption[] = videoInputDevices,
   ): Promise<void> {
     setVideoInputError(null);
@@ -1855,7 +2002,6 @@ export default function App() {
         deviceId: "",
         captureResolution,
         sourceDimensions: null,
-        ...(fitToPreview ? { transform: { x: 0, y: 0, width: 100, height: 100 } } : {}),
       });
       return;
     }
@@ -1895,7 +2041,6 @@ export default function App() {
         deviceId,
         captureResolution,
         sourceDimensions: getSourceDimensions(stream),
-        ...(fitToPreview ? { transform: { x: 0, y: 0, width: 100, height: 100 } } : {}),
       });
     } catch (error) {
       console.error("Unable to start video input:", error);
@@ -1932,7 +2077,6 @@ export default function App() {
               layer.kind,
               layer.deviceId,
               layer.captureResolution,
-              false,
               devices,
             );
           }
@@ -1951,38 +2095,277 @@ export default function App() {
     }
   }
 
+  const isRecordingActive = recordingActive;
+  const activeExport = recordingExports.find((entry) => entry.state === "PROCESSING");
+  const exportsCompleted = postProcessingState === "COMPLETED";
+  const overallExportProgress = exportsCompleted
+    ? 100
+    : recordingExports.length > 0
+      ? Math.round(recordingExports.reduce((total, entry) => {
+        const progress = entry.state === "COMPLETED"
+          ? 100
+          : entry.state === "PROCESSING"
+            ? Math.max(0, Math.min(100, entry.progress ?? 0))
+            : 0;
+        return total + progress;
+      }, 0) / recordingExports.length)
+      : 0;
   useEffect(() => {
-    if (!recordMenuOpen) {
+    if (!isRecordingActive && postProcessingState !== "PROCESSING") {
       return;
     }
-
-    function closeOnPointerDown(event: PointerEvent): void {
-      if (event.target instanceof Node && !recordWrapRef.current?.contains(event.target)) {
-        setRecordMenuOpen(false);
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await window.duiStudio.getRecordingStatus();
+        if (cancelled) {
+          return;
+        }
+        if (status.postProcessingState) {
+          setPostProcessingState(status.postProcessingState);
+          if (status.postProcessingState === "PROCESSING") {
+            setExportDialogOpen(true);
+          }
+          if (status.exports) {
+            setRecordingExports(status.exports);
+          }
+          if (status.postProcessingState === "PROCESSING") {
+            const currentExport = status.exports?.find((entry) => entry.state === "PROCESSING");
+            setRecordingNotice({
+              error: false,
+              text: currentExport
+                ? `Exporting ${currentExport.mode === "HORIZONTAL" ? "horizontal" : "vertical"} layout…`
+                : "Exporting horizontal, then vertical layout…",
+            });
+          } else if (status.postProcessingState === "COMPLETED") {
+            setRecordingNotice({
+              error: Boolean(status.error),
+              text: status.error
+                ? `${status.error} ${formatRecordingExports(status.exports)}`
+                : `Both layouts saved: ${formatRecordingExports(status.exports)}`,
+            });
+          } else if (status.postProcessingState === "ERROR") {
+            setRecordingNotice({
+              error: true,
+              text: `Export failed. The source recording was preserved. ${status.error ?? ""} ${formatRecordingExports(status.exports)}`.trim(),
+            });
+          }
+        }
+        if (status.state === "ERROR" && isRecordingActive) {
+          setRecordingNotice({ error: true, text: status.error ?? "Recording stopped unexpectedly." });
+          await stopRecording();
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRecordingNotice({
+            error: true,
+            text: error instanceof Error ? `Unable to read recording status: ${error.message}` : "Unable to read recording status.",
+          });
+        }
       }
-    }
-
-    function closeOnEscape(event: KeyboardEvent): void {
-      if (event.key === "Escape") {
-        setRecordMenuOpen(false);
-      }
-    }
-
-    document.addEventListener("pointerdown", closeOnPointerDown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnPointerDown);
-      document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [recordMenuOpen]);
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isRecordingActive, postProcessingState]);
 
-  function startRecording(): void {
-    const layouts = OUTPUTS.filter((output) => recordLayouts[output.id]).map((output) => output.id);
-    if (layouts.length === 0) {
+  useEffect(() => {
+    if (!isRecordingActive || recordingStartedAtRef.current === null) {
       return;
     }
-    setRecordingLayouts(layouts);
-    setRecordMenuOpen(false);
+    const updateElapsed = () => {
+      const startedAt = recordingStartedAtRef.current;
+      if (startedAt !== null) {
+        setRecordingElapsedMs(performance.now() - startedAt);
+      }
+    };
+    const timer = window.setInterval(updateElapsed, 1000);
+    updateElapsed();
+    return () => window.clearInterval(timer);
+  }, [isRecordingActive]);
+
+  async function startRecording(): Promise<void> {
+    if (recordingActionInFlightRef.current || recordingBusy || isRecordingActive) {
+      return;
+    }
+    const enabledLayers = currentLayers.filter((layer) => layer.enabled);
+    if (!currentScene) {
+      setRecordingNotice({ error: true, text: "Create or select a shared scene before starting a recording." });
+      return;
+    }
+    if (enabledLayers.some((layer) => layer.kind === "display-capture")) {
+      setRecordingNotice({ error: true, text: "Display capture is not supported by the native recording pipeline yet. Disable it or use a capture card." });
+      return;
+    }
+    const sourceLayers = enabledLayers.filter((layer) => layer.kind === "game-capture" || layer.kind === "camera-device");
+    if (sourceLayers.length === 0) {
+      setRecordingNotice({ error: true, text: "Add a capture card or camera to the shared scene to export both layouts." });
+      return;
+    }
+    const sourceDeviceName = (layer: StudioLayer) =>
+      videoInputDevices.find((device) => device.id === layer.deviceId)?.name;
+    const namesForSource = (kind: LayerKind) => [...new Set(
+      enabledLayers.filter((layer) => layer.kind === kind)
+        .map(sourceDeviceName)
+        .filter((name): name is string => Boolean(name)),
+    )];
+    const selectedCaptureLayers = enabledLayers.filter((layer) => layer.kind === "game-capture");
+    const selectedCameraLayers = enabledLayers.filter((layer) => layer.kind === "camera-device");
+    const captureNames = namesForSource("game-capture");
+    const cameraNames = namesForSource("camera-device");
+    if ((selectedCaptureLayers.length > 0 && captureNames.length === 0)
+      || (selectedCameraLayers.length > 0 && cameraNames.length === 0)) {
+      setRecordingNotice({ error: true, text: "A selected capture card or camera is unavailable. Reload the device list or choose another device." });
+      return;
+    };
+    if (captureNames.length > 1 || cameraNames.length > 1) {
+      setRecordingNotice({ error: true, text: "The shared scene must use only one capture card and one camera for a synchronized recording." });
+      return;
+    }
+
+    const trackVolume = (id: string) => {
+      const track = audioTracks.find((item) => item.id === id);
+      return track && !track.muted ? track.volume / 100 : 0;
+    };
+    const recordingScene: RecordingScene = {
+      scene: currentScene,
+      layers: currentLayers,
+    };
+    const captureSize = selectedCaptureLayers
+      .map((layer) => getCaptureResolution(layer.captureResolution))
+      .sort((first, second) => second.width * second.height - first.width * first.height)[0];
+    const micTrack = audioTracks.find((item) => item.id === "mic");
+    recordingActionInFlightRef.current = true;
+    setRecordingBusy(true);
+    setRecordingNotice(null);
+    setPostProcessingState("NOT_STARTED");
+    setRecordingExports([]);
+    setExportDialogOpen(false);
+    try {
+      const audioInputs = await discoverAudioInputs();
+      const gameAudioDevice = (captureNames[0] ? findAudioDeviceByName(captureNames[0], audioInputs) : undefined)
+        ?? audioInputs.find((device) => device.id === audioTrackInputIds["capture-card"]);
+      if (captureNames.length > 0 && !gameAudioDevice) {
+        throw new Error(`No audio input matching ${captureNames[0]} was found. Select the Elgato input in the Capture card audio settings and try again.`);
+      }
+
+      const selectedMicDevice = audioInputs.find((device) => device.id === selectedAudioInputId);
+      const preferredMicDevice = findBuiltInMicrophone(
+        audioInputs.filter((device) => device.id !== gameAudioDevice?.id),
+      );
+      const micDevice = selectedMicDevice
+        && selectedMicDevice.id !== gameAudioDevice?.id
+        && normalizeAudioDeviceName(selectedMicDevice.name) !== normalizeAudioDeviceName(gameAudioDevice?.name ?? "")
+        ? selectedMicDevice
+        : preferredMicDevice;
+      if (micTrack && !micTrack.muted && !micDevice) {
+        throw new Error("No MacBook Air microphone input was found. Select the built-in microphone in Microphone settings and try again.");
+      }
+      if (micDevice && micDevice.id !== selectedAudioInputId) {
+        setSelectedAudioInputId(micDevice.id);
+      }
+      if (gameAudioDevice && gameAudioDevice.id !== audioTrackInputIds["capture-card"]) {
+        setAudioTrackInputIds((ids) => ({ ...ids, "capture-card": gameAudioDevice.id }));
+      }
+      if (gameAudioDevice && !audioTracks.some((track) => track.id === "capture-card")) {
+        setAudioTracks((tracks) => (
+          tracks.some((track) => track.id === "capture-card")
+            ? tracks
+            : [...tracks, { id: "capture-card", name: "Capture card", icon: "audio", volume: 100, muted: false }]
+        ));
+      }
+
+      const result = await window.duiStudio.startRecording({
+        captureCard: captureNames[0],
+        camera: cameraNames[0],
+        gameAudio: gameAudioDevice?.name,
+        microphone: micTrack && !micTrack.muted ? micDevice?.name : undefined,
+        microphoneEnabled: Boolean(micTrack && !micTrack.muted),
+        captureWidth: captureSize?.width,
+        captureHeight: captureSize?.height,
+        mode: "HORIZONTAL",
+        fps: 60,
+        gameVolume: gameAudioDevice
+          ? audioTracks.some((track) => track.id === "capture-card") ? trackVolume("capture-card") : 1
+          : 0,
+        microphoneVolume: trackVolume("mic"),
+        scene: recordingScene,
+      });
+      if (result.success) {
+        recordingStartedAtRef.current = performance.now();
+        setRecordingElapsedMs(0);
+        setRecordingActive(true);
+      } else {
+        setRecordingNotice({ error: true, text: result.error ?? "Recording could not start." });
+      }
+    } catch (error) {
+      setRecordingNotice({ error: true, text: error instanceof Error ? error.message : "Recording could not start." });
+    } finally {
+      recordingActionInFlightRef.current = false;
+      setRecordingBusy(false);
+    }
+  }
+
+  async function stopRecording(): Promise<void> {
+    if (recordingActionInFlightRef.current || recordingBusy || !isRecordingActive) {
+      return;
+    }
+    const startedAt = recordingStartedAtRef.current;
+    if (startedAt !== null) {
+      setRecordingElapsedMs(performance.now() - startedAt);
+    }
+    recordingStartedAtRef.current = null;
+    recordingActionInFlightRef.current = true;
+    setRecordingBusy(true);
+    try {
+      const result = await window.duiStudio.stopRecording();
+      setPostProcessingState(result.postProcessingState ?? "NOT_STARTED");
+      setRecordingExports(result.exports ?? []);
+      if (result.postProcessingState === "PROCESSING" || result.postProcessingState === "COMPLETED") {
+        setExportDialogOpen(true);
+      }
+      setRecordingNotice(
+        result.success
+          ? {
+            error: result.postProcessingState === "ERROR",
+            text: result.postProcessingState === "PROCESSING"
+              ? `Source saved (${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB). Exporting horizontal, then vertical...`
+              : result.postProcessingState === "ERROR"
+                ? `Source saved, but export failed: ${result.error ?? "Project metadata could not be saved."} ${formatRecordingExports(result.exports)}`
+                : `Saved ${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB: ${result.filePath}`,
+          }
+          : { error: true, text: result.error ?? "Recording failed." },
+      );
+    } catch (error) {
+      setRecordingNotice({ error: true, text: error instanceof Error ? error.message : "Recording failed." });
+    } finally {
+      setRecordingActive(false);
+      recordingActionInFlightRef.current = false;
+      setRecordingBusy(false);
+    }
+  }
+
+  async function retryRecordingExport(): Promise<void> {
+    if (recordingActionInFlightRef.current || recordingBusy || postProcessingState !== "ERROR") {
+      return;
+    }
+    recordingActionInFlightRef.current = true;
+    setRecordingBusy(true);
+    try {
+      const result = await window.duiStudio.retryRecordingExport();
+      setPostProcessingState(result.postProcessingState ?? "PROCESSING");
+      setRecordingExports(result.exports ?? []);
+      setExportDialogOpen(true);
+      setRecordingNotice({ error: false, text: "Export retry started. Your source recording remains available." });
+    } catch (error) {
+      setRecordingNotice({ error: true, text: error instanceof Error ? error.message : "Unable to retry the export." });
+    } finally {
+      recordingActionInFlightRef.current = false;
+      setRecordingBusy(false);
+    }
   }
 
   function reloadAll(): void {
@@ -2024,26 +2407,24 @@ export default function App() {
       updateLayer(sceneId, layer.id, {
         captureResolution,
         sourceDimensions: stream && track ? getSourceDimensions(stream) : null,
-        transform: { x: 0, y: 0, width: 100, height: 100 },
       });
       return;
     }
 
     if (layer.kind === "camera-device" || layer.kind === "game-capture") {
       if (layer.deviceId) {
-        await changeVideoInputDevice(sceneId, layer.id, layer.kind, layer.deviceId, captureResolution, true);
+        await changeVideoInputDevice(sceneId, layer.id, layer.kind, layer.deviceId, captureResolution);
       } else {
         updateLayer(sceneId, layer.id, {
           captureResolution,
           sourceDimensions: null,
-          transform: { x: 0, y: 0, width: 100, height: 100 },
         });
       }
     }
   }
 
   function addLayer(option: LayerOption): void {
-    const sceneId = activeScenes[selectedOutput];
+    const sceneId = activeScene;
     if (!sceneId) {
       return;
     }
@@ -2062,7 +2443,7 @@ export default function App() {
       captureResolution: DEFAULT_CAPTURE_RESOLUTION,
       crop: { ...DEFAULT_CROP_INSETS },
       sourceDimensions: null,
-      transform: getDefaultLayerTransform(option.kind),
+      transforms: getDefaultLayerTransforms(option.kind),
     };
     setLayersByScene((current) => ({
       ...current,
@@ -2072,36 +2453,33 @@ export default function App() {
     setLayerMenuOpen(false);
   }
 
-  function selectScene(outputId: OutputId, sceneId: SceneId | null): void {
+  function selectScene(sceneId: SceneId | null): void {
     setSettingsLayerId(null);
     setLayerMenuOpen(false);
     setSelectedCanvasObject(null);
-    setActiveScenes((current) => ({ ...current, [outputId]: sceneId }));
+    setActiveScene(sceneId);
   }
 
   function addScene(): void {
     let sceneId = `custom-${nextCustomSceneId++}`;
-    while (Object.values(scenesByOutput).some((scenes) => scenes.some((scene) => scene.id === sceneId))) {
+    while (scenes.some((scene) => scene.id === sceneId)) {
       sceneId = `custom-${nextCustomSceneId++}`;
     }
     const scene: Scene = {
       id: sceneId,
-      name: `Scene ${scenesByOutput[selectedOutput].length + 1}`,
+      name: `Scene ${scenes.length + 1}`,
       appearance: "custom",
     };
-    setScenesByOutput((current) => ({
-      ...current,
-      [selectedOutput]: [...current[selectedOutput], scene],
-    }));
-    selectScene(selectedOutput, scene.id);
+    setScenes((current) => [...current, scene]);
+    selectScene(scene.id);
   }
 
-  function startSceneRename(outputId: OutputId, scene: Scene): void {
+  function startSceneRename(scene: Scene): void {
     setSceneNameDraft(scene.name);
-    setEditingScene({ outputId, sceneId: scene.id });
+    setEditingScene(scene.id);
   }
 
-  function finishSceneRename(outputId: OutputId, sceneId: SceneId): void {
+  function finishSceneRename(sceneId: SceneId): void {
     if (ignoreRenameBlur.current) {
       ignoreRenameBlur.current = false;
       return;
@@ -2109,19 +2487,15 @@ export default function App() {
 
     const name = sceneNameDraft.trim();
     if (name) {
-      setScenesByOutput((current) => ({
-        ...current,
-        [outputId]: current[outputId].map((scene) => (
+      setScenes((current) => current.map((scene) => (
           scene.id === sceneId ? { ...scene, name } : scene
-        )),
-      }));
+        )));
     }
     setEditingScene(null);
   }
 
-  function deleteScene(outputId: OutputId, sceneId: SceneId): void {
-    const outputScenes = scenesByOutput[outputId];
-    const sceneIndex = outputScenes.findIndex((scene) => scene.id === sceneId);
+  function deleteScene(sceneId: SceneId): void {
+    const sceneIndex = scenes.findIndex((scene) => scene.id === sceneId);
     if (sceneIndex === -1) {
       return;
     }
@@ -2129,17 +2503,8 @@ export default function App() {
     for (const layer of layersByScene[sceneId] ?? []) {
       setBrowserCaptureStream(layer.id, null);
     }
-    const replacementScene = outputScenes[sceneIndex + 1] ?? outputScenes[sceneIndex - 1] ?? null;
-    setScenesByOutput((current) => {
-      const currentScenes = current[outputId];
-      if (!currentScenes.some((scene) => scene.id === sceneId)) {
-        return current;
-      }
-      return {
-        ...current,
-        [outputId]: currentScenes.filter((scene) => scene.id !== sceneId),
-      };
-    });
+    const replacementScene = scenes[sceneIndex + 1] ?? scenes[sceneIndex - 1] ?? null;
+    setScenes((current) => current.filter((scene) => scene.id !== sceneId));
     setLayersByScene((current) => {
       const remainingLayers = { ...current };
       delete remainingLayers[sceneId];
@@ -2147,10 +2512,10 @@ export default function App() {
     });
     setSettingsLayerId(null);
     setLayerMenuOpen(false);
-    if (activeScenes[outputId] === sceneId) {
-      selectScene(outputId, replacementScene?.id ?? null);
+    if (activeScene === sceneId) {
+      selectScene(replacementScene?.id ?? null);
     }
-    if (editingScene?.outputId === outputId && editingScene.sceneId === sceneId) {
+    if (editingScene === sceneId) {
       setEditingScene(null);
     }
   }
@@ -2185,6 +2550,45 @@ export default function App() {
     });
   }
 
+  async function discoverAudioInputs(): Promise<DeviceOption[]> {
+    if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
+      throw new Error("Microphone input discovery is not supported in this environment.");
+    }
+    if (typeof window.duiStudio?.requestMicrophoneAccess === "function") {
+      const granted = await window.duiStudio.requestMicrophoneAccess();
+      if (!granted) {
+        throw new Error("Microphone permission was denied. Allow DUI Studio under System Settings > Privacy & Security > Microphone, then reopen these settings.");
+      }
+    }
+    const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    let devices: MediaDeviceInfo[];
+    try {
+      devices = await navigator.mediaDevices.enumerateDevices();
+    } finally {
+      permissionStream.getTracks().forEach((track) => track.stop());
+    }
+    const audioInputs = devices
+      .filter((device) => device.kind === "audioinput" && device.deviceId !== "default")
+      .map((device, index) => ({
+        id: device.deviceId,
+        name: device.label || `Microphone ${index + 1}`,
+      }))
+      .filter((device) => device.id.length > 0);
+    if (audioInputs.length === 0) {
+      throw new Error("No microphone input devices found. Check that a microphone is connected and recognized by the system.");
+    }
+    setAudioInputDevices(audioInputs);
+    setAudioOutputDevices(
+      devices
+        .filter((device) => device.kind === "audiooutput" && device.deviceId !== "default")
+        .map((device, index) => ({
+          id: device.deviceId,
+          name: device.label || `Output ${index + 1}`,
+        })),
+    );
+    return audioInputs;
+  }
+
   async function toggleAudioSettings(trackId: string): Promise<void> {
     if (audioSettingsOpen && audioSettingsTrackId === trackId) {
       setAudioSettingsOpen(false);
@@ -2196,37 +2600,7 @@ export default function App() {
     setAudioInputError(null);
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
-        throw new Error("Microphone input discovery is not supported in this environment.");
-      }
-      if (typeof window.duiStudio?.requestMicrophoneAccess === "function") {
-        const granted = await window.duiStudio.requestMicrophoneAccess();
-        if (!granted) {
-          throw new Error("Microphone permission was denied. Allow DUI Studio under System Settings > Privacy & Security > Microphone, then reopen these settings.");
-        }
-      }
-      const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      permissionStream.getTracks().forEach((track) => track.stop());
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices
-        .filter((device) => device.kind === "audioinput")
-        .map((device, index) => ({
-          id: device.deviceId,
-          name: device.label || `Microphone ${index + 1}`,
-        }))
-        .filter((device) => device.id.length > 0);
-      if (audioInputs.length === 0) {
-        throw new Error("No microphone input devices found. Check that a microphone is connected and recognized by the system.");
-      }
-      setAudioInputDevices(audioInputs);
-      setAudioOutputDevices(
-        devices
-          .filter((device) => device.kind === "audiooutput" && device.deviceId !== "default")
-          .map((device, index) => ({
-            id: device.deviceId,
-            name: device.label || `Output ${index + 1}`,
-          })),
-      );
+      await discoverAudioInputs();
       if (trackId === "mic") {
         setAudioMonitoringEnabled(true);
       }
@@ -2251,75 +2625,48 @@ export default function App() {
           <span className="brand-name">DUI Studio</span>
         </div>
         <div className="topbar-actions">
-          <div className="settings-wrap" ref={recordWrapRef}>
-            <button
-              className={`action-button action-button--record${recordingLayouts.length ? " action-button--recording" : ""}`}
-              aria-expanded={recordMenuOpen}
-              aria-haspopup="dialog"
-              onClick={() => {
-                if (recordingLayouts.length) {
-                  setRecordingLayouts([]);
-                } else {
-                  setRecordMenuOpen((open) => !open);
-                }
-              }}
-            >
-              <Icon name="record" />
-              {recordingLayouts.length ? "Stop" : "Record"}
-            </button>
-            {recordMenuOpen && (
-              <div className="settings-popover" role="dialog" aria-label="Recording mode">
-                <strong>Recording Mode</strong>
-                <div className="record-mode-list">
-                  {OUTPUTS.map((output) => (
-                    <label className="guide-setting" key={output.id}>
-                      <span>{output.id === "landscape" ? "Horizontal" : "Vertical"}</span>
-                      <input
-                        type="checkbox"
-                        checked={recordLayouts[output.id]}
-                        onChange={(event) => {
-                          const checked = event.target.checked;
-                          setRecordLayouts((layouts) => ({ ...layouts, [output.id]: checked }));
-                        }}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <button
-                  className="record-start-button"
-                  disabled={!OUTPUTS.some((output) => recordLayouts[output.id])}
-                  onClick={startRecording}
-                >
-                  <Icon name="record" />
-                  Start recording
-                </button>
-              </div>
-            )}
-          </div>
-          <button className="action-button action-button--stream" disabled title="Streaming will be available when the media pipeline is connected">
-            <Icon name="stream" />
-            Stream
+          <button
+            className={`action-button action-button--record${recordingActive ? " action-button--recording" : ""}`}
+            disabled={recordingBusy || postProcessingState === "PROCESSING"}
+            title={recordingActive ? "Stop the current recording" : "Start recording the shared scene to both layouts"}
+            onClick={() => {
+              if (recordingActive) {
+                void stopRecording();
+              } else {
+                void startRecording();
+              }
+            }}
+          >
+            <Icon name="record" />
+            {recordingActive ? "Stop Recording" : "Start Recording"}
           </button>
-          <div className="settings-wrap">
-            <button
-              className={`settings-button${settingsOpen ? " settings-button--active" : ""}`}
-              onClick={() => setSettingsOpen((open) => !open)}
-              aria-expanded={settingsOpen}
-              aria-haspopup="dialog"
-            >
-              <Icon name="settings" />
-              Settings
-            </button>
-            {settingsOpen && (
-              <div className="settings-popover" role="dialog" aria-label="Preview settings">
-                <strong>Preview settings</strong>
-                <label className="guide-setting">
-                  <span>Safe-area guides</span>
-                  <input type="checkbox" checked={showGuides} onChange={(event) => setShowGuides(event.target.checked)} />
-                </label>
-              </div>
-            )}
-          </div>
+          {(isRecordingActive || (
+            recordingNotice
+            && postProcessingState !== "PROCESSING"
+            && postProcessingState !== "COMPLETED"
+          )) && (
+            <div className="recording-inline-status" aria-live="polite">
+              {isRecordingActive && (
+                <strong className="recording-timer">{formatRecordingTime(recordingElapsedMs)}</strong>
+              )}
+              {recordingNotice
+                && postProcessingState !== "PROCESSING"
+                && postProcessingState !== "COMPLETED" && (
+                <span className={`record-notice${recordingNotice.error ? " record-notice--error" : ""}`}>
+                  {recordingNotice.text}
+                </span>
+              )}
+              {postProcessingState === "ERROR" && (
+                <button
+                  className="record-retry-button"
+                  disabled={recordingBusy}
+                  onClick={() => void retryRecordingExport()}
+                >
+                  Retry export
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -2327,8 +2674,12 @@ export default function App() {
         <aside className="inspector" ref={inspectorRef} aria-label="Studio configuration">
           <div className="inspector-heading">
             <div>
-              <span className="section-kicker">CONFIGURING</span>
-              <h2>{currentOutput.name}</h2>
+              <span className="section-kicker">SHARED CONFIGURATION</span>
+              <h2 className="inspector-ratio" aria-label="16 by 9 and 9 by 16 layouts">
+                <span>16:9</span>
+                <span className="inspector-ratio-separator" aria-hidden="true">+</span>
+                <span>9:16</span>
+              </h2>
             </div>
             <div className="inspector-heading-actions">
               <IconButton
@@ -2340,7 +2691,6 @@ export default function App() {
               >
                 <Icon name="reload" />
               </IconButton>
-              <span className="inspector-ratio">{currentOutput.ratio}</span>
             </div>
           </div>
 
@@ -2357,10 +2707,10 @@ export default function App() {
                 <Icon name="plus" />
               </button>
             </div>
-            <div className="scene-list" role="group" aria-label={`${currentOutput.name} scenes`}>
+            <div className="scene-list" role="group" aria-label="Shared scenes">
               {currentScenes.map((scene) => {
-                const active = activeScenes[selectedOutput] === scene.id;
-                const editing = editingScene?.outputId === selectedOutput && editingScene.sceneId === scene.id;
+                const active = activeScene === scene.id;
+                const editing = editingScene === scene.id;
                 return (
                   <div className={`scene-item${active ? " scene-item--active" : ""}`} key={scene.id}>
                     {editing ? (
@@ -2372,7 +2722,7 @@ export default function App() {
                           maxLength={12}
                           aria-label={`Rename scene ${scene.name}`}
                           onChange={(event) => setSceneNameDraft(event.target.value)}
-                          onBlur={() => finishSceneRename(selectedOutput, scene.id)}
+                          onBlur={() => finishSceneRename(scene.id)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") {
                               event.currentTarget.blur();
@@ -2388,12 +2738,12 @@ export default function App() {
                     ) : (
                       <button
                         className="scene-row"
-                        onClick={() => selectScene(selectedOutput, scene.id)}
-                        onDoubleClick={() => startSceneRename(selectedOutput, scene)}
+                        onClick={() => selectScene(scene.id)}
+                        onDoubleClick={() => startSceneRename(scene)}
                         onKeyDown={(event) => {
                           if (event.key === "F2") {
                             event.preventDefault();
-                            startSceneRename(selectedOutput, scene);
+                            startSceneRename(scene);
                           }
                         }}
                         title="Double-click to rename"
@@ -2407,7 +2757,7 @@ export default function App() {
                       className="delete-scene-button"
                       title={`Delete ${scene.name}`}
                       aria-label={`Delete scene ${scene.name}`}
-                      onClick={() => deleteScene(selectedOutput, scene.id)}
+                      onClick={() => deleteScene(scene.id)}
                     >
                       <Icon name="trash" />
                     </button>
@@ -2703,7 +3053,7 @@ export default function App() {
                                   ))}
                                 </Dropdown>
                                 <span className="layer-resolution-hint">
-                                  Requests this capture size; changing it resizes the layer to fill the preview.
+                                  Requests this capture size without changing either layout's placement.
                                 </span>
                             </label>
                           )}
@@ -2998,37 +3348,36 @@ export default function App() {
         <section className="canvas-workspace" aria-label="Output previews">
           <div className="preview-grid">
             {OUTPUTS.map((output) => {
-              const outputScene = scenesByOutput[output.id].find((scene) => scene.id === activeScenes[output.id]) ?? null;
               return (
                 <OutputPreview
                   key={output.id}
                   output={output}
-                  active={selectedOutput === output.id}
-                  scene={outputScene}
-                  layers={getLayersForOutput(output.id)}
-                  guides={showGuides}
+                  scene={currentScene}
+                  layers={currentLayers}
+                  previewEnabled={previewEnabled[output.id]}
                   browserCaptureStreams={browserCaptureStreams}
                   selectedLayerId={
-                    selectedCanvasObject && selectedCanvasObject.sceneId === outputScene?.id
+                    selectedCanvasObject && selectedCanvasObject.sceneId === currentScene?.id
                       ? selectedCanvasObject.layerId
                       : null
                   }
-                  onSelect={() => {
-                    setSettingsLayerId(null);
-                    setLayerMenuOpen(false);
-                    setSelectedOutput(output.id);
-                  }}
                   onSelectLayer={(layerId) => {
-                    setSelectedCanvasObject(outputScene ? { sceneId: outputScene.id, layerId } : null);
+                    setSelectedCanvasObject(currentScene ? { sceneId: currentScene.id, layerId } : null);
+                  }}
+                  onTogglePreview={() => {
+                    setPreviewEnabled((current) => ({
+                      ...current,
+                      [output.id]: !current[output.id],
+                    }));
                   }}
                   onTransformChange={(layerId, transform) => {
-                    if (outputScene) {
-                      updateLayer(outputScene.id, layerId, { transform });
+                    if (currentScene) {
+                      updateLayerTransform(currentScene.id, layerId, output.id, transform);
                     }
                   }}
                   onSourceDimensionsChange={(layerId, sourceDimensions) => {
-                    if (outputScene) {
-                      updateLayer(outputScene.id, layerId, { sourceDimensions });
+                    if (currentScene) {
+                      updateLayer(currentScene.id, layerId, { sourceDimensions });
                     }
                   }}
                 />
@@ -3037,6 +3386,103 @@ export default function App() {
           </div>
         </section>
       </div>
+      {exportDialogOpen && (postProcessingState === "PROCESSING" || exportsCompleted) && (
+        <div className="export-progress-backdrop">
+          <section
+            className="export-progress-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-progress-title"
+            aria-describedby="export-progress-description"
+          >
+            <div className="export-progress-heading">
+              <div>
+                <span className="export-progress-kicker">
+                  {exportsCompleted ? "EXPORT COMPLETE" : "POST-PROCESSING"}
+                </span>
+                <h2 id="export-progress-title">
+                  {exportsCompleted ? "Exports complete" : "Exporting videos"}
+                </h2>
+              </div>
+              {exportsCompleted
+                ? <span className="export-progress-success" aria-hidden="true">✓</span>
+                : null}
+            </div>
+            <p id="export-progress-description" className="export-progress-description">
+              {exportsCompleted
+                ? "Both layouts have been saved successfully."
+                : activeExport
+                  ? `Rendering ${activeExport.mode === "HORIZONTAL" ? "Landscape" : "Portrait"} layout…`
+                  : "Preparing the video exports…"}
+            </p>
+            <div className="export-progress-label">
+              <span>Overall progress</span>
+              <strong>{overallExportProgress}%</strong>
+            </div>
+            <div
+              className="export-progress-track"
+              role="progressbar"
+              aria-label="Overall export progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={overallExportProgress}
+            >
+              <span style={{ width: `${overallExportProgress}%` }} />
+            </div>
+            <div className="export-progress-outputs">
+              {(["HORIZONTAL", "VERTICAL"] as const).map((mode) => {
+                const entry = recordingExports.find((candidate) => candidate.mode === mode);
+                const output = mode === "HORIZONTAL" ? OUTPUTS[0] : OUTPUTS[1];
+                const status = entry?.state === "COMPLETED"
+                  ? "Completed"
+                  : entry?.state === "ERROR"
+                    ? "Failed"
+                    : entry?.state === "PROCESSING"
+                      ? "Rendering"
+                      : "Waiting";
+                const stateClass = entry?.state === "COMPLETED"
+                  ? "complete"
+                  : entry?.state === "PROCESSING"
+                    ? "active"
+                    : entry?.state === "ERROR"
+                      ? "error"
+                      : "waiting";
+                return (
+                  <div className={`export-progress-output-card export-progress-output-card--${stateClass}`} key={mode}>
+                    <div className="export-progress-output-main">
+                      <span className="export-progress-output-icon">
+                        <Icon name={output.icon} />
+                      </span>
+                      <span className="export-progress-output-copy">
+                        <strong>{output.name}</strong>
+                        <small>{output.size} · MP4</small>
+                      </span>
+                      <span className={`export-progress-badge export-progress-badge--${stateClass}`}>
+                        {status}
+                      </span>
+                    </div>
+                    {exportsCompleted && entry?.path && (
+                      <div className="export-progress-path">
+                        <span>Saved to</span>
+                        <code>{entry.path}</code>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {exportsCompleted && (
+              <button
+                className="export-progress-close"
+                type="button"
+                onClick={() => setExportDialogOpen(false)}
+              >
+                Close
+              </button>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }

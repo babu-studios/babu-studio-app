@@ -3,9 +3,11 @@ import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
 import { registerDisplayCaptureIpc } from "./ipc/display-capture.ipc";
 import { MediaCoreService } from "./services/media-core.service";
+import { RecordingService } from "./services/recording.service";
 import { createMainWindow } from "./services/window.service";
 
 const mediaCore = new MediaCoreService();
+const recording = new RecordingService(mediaCore);
 
 app.setName("DUI Studio");
 
@@ -18,7 +20,7 @@ function getMediaCorePath(): string {
 }
 
 app.whenReady().then(async () => {
-  registerMediaCoreIpc(mediaCore);
+  registerMediaCoreIpc(mediaCore, recording);
   registerDisplayCaptureIpc();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
@@ -67,6 +69,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  recording.stopPostProcessing();
   mediaCore.stop();
 });
 

@@ -3,31 +3,28 @@ flowchart TD
     A[Start] --> B[Select Input Devices]
     B --> C[Elgato 4K S]
     B --> D[Webcam]
-    B --> E[Headphone Mic]
+    B --> E[Microphone]
+    E --> F[Configure Shared Scene]
+    F --> G[View Landscape and Portrait Previews]
 
-    C --> F[Capture Gameplay Video]
-    D --> G[Capture Webcam Feed]
-    E --> H[Capture Mic Audio]
+    C --> H[Capture Gameplay Video and Game Audio]
+    D --> I[Capture Webcam Feed]
+    E --> J[Capture Mic Audio]
 
-    F --> I[Audio Monitoring to Headphones]
-    G --> I
-    H --> I
+    H --> K[Record Master Session]
+    I --> K
+    J --> K
+    G --> K
 
-    I --> J[Record Master Session]
-    J --> K[Save Raw Master Recording]
-    K --> L[Pause / Resume Session]
-    L --> M[Manual Export]
-
-    M --> N[Select Output Format]
-    N --> O[16:9 Horizontal]
-    N --> P[9:16 Vertical]
-    N --> Q[Custom Ratio]
-
-    O --> R[Render Final MP4]
-    P --> R
-    Q --> R
-    R --> S[Save Final Video]
-    S --> T[End]
+    K --> L[Save Synchronized Source Tracks]
+    L --> M[Finalize Source Recording]
+    M --> N[Render Shared Scene Horizontally]
+    N --> O[Render Shared Scene Vertically]
+    O --> P[Save Both MP4 Exports]
+    P --> Q[Update Project Metadata]
+    Q --> R[End]
 ```
 
-The capture and export steps above describe the planned product workflow; they are not implemented in the initial Electron/C++ scaffold.
+Configure one shared layer list while arranging each layer independently in the landscape and portrait previews. New layers start centered in each preview, using the same output-pixel sizes without fitting to fill the vertical frame; layers may extend beyond the frame after placement changes. Saved scenes initialize Portrait from Landscape at the same pixel sizes, centered in the Portrait frame, then preserve independent Portrait edits. Moving or resizing a layer affects only the preview being edited; both layouts use the same enabled layers and layer order. Each preview can be paused independently to stop rendering its live layers; this does not change the recording or export. Source capture and file writing run in the C++ media core; Electron renders the shared layer list sequentially with its landscape and portrait placements after the source file is finalized. Export failures leave the source recording available.
+
+While the two exports are rendered sequentially, the app shows a blocking progress dialog with individual layout status and a single overall percentage bar. Progress is based on FFmpeg's processed output timestamp. The compositor restores each recorded video and audio track's capture-clock start offset so the filters do not shift speech out of sync with the camera. When both exports complete, the same dialog displays their saved paths and stays open until closed. The export mix compresses and boosts microphone audio, then uses it to duck game audio while speech is present. The source audio tracks in `master.mkv` are preserved unchanged.

@@ -1,0 +1,678 @@
+import { app, systemPreferences } from "electron";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { Readable } from "node:stream";
+import type {
+  NativeCaptureDevice,
+  PostProcessingState,
+  RecordingExport,
+  RecordingLayer,
+  RecordingMode,
+  RecordingResult,
+  RecordingScene,
+  StartRecordingRequest,
+} from "@shared/types/media";
+import type { MediaCoreService } from "./media-core.service";
+
+type FfmpegProcess = ChildProcessByStdio<null, null, Readable>;
+
+const CANVAS = {
+  HORIZONTAL: { width: 1920, height: 1080 },
+  VERTICAL: { width: 1080, height: 1920 },
+} as const;
+
+const CAPTURE_SIZES = {
+  "720p": { width: 1280, height: 720 },
+  "1080p": { width: 1920, height: 1080 },
+  "1440p": { width: 2560, height: 1440 },
+  "2160p": { width: 3840, height: 2160 },
+} as const;
+
+type ProjectMetadata = Record<string, unknown> & {
+  status: string;
+  postProcessingStatus: PostProcessingState;
+};
+
+function failure(request: StartRecordingRequest, error: string): RecordingResult {
+  return {
+    state: "ERROR",
+    success: false,
+    recordingMode: request.mode,
+    filePath: "",
+    durationMs: 0,
+    fileSizeBytes: 0,
+    droppedVideoFrames: 0,
+    droppedAudioFrames: 0,
+    videoTracks: [],
+    audioTracks: [],
+    error,
+    postProcessingState: "NOT_STARTED",
+    exportPath: null,
+  };
+}
+
+function evenDimension(value: number): number {
+  return Math.max(2, Math.round(value / 2) * 2);
+}
+
+function finite(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeCaptureDeviceName(name: string): string {
+  return name
+    .replace(/^default\s*-\s*/i, "")
+    .replace(/\s+\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, "")
+    .replace(/\s+\(built-in\)$/i, "")
+    .trim()
+    .toLocaleLowerCase();
+}
+
+function nativeDeviceId(
+  selectedName: string,
+  type: NativeCaptureDevice["type"],
+  devices: NativeCaptureDevice[],
+): string {
+  const typedDevices = [...new Map(
+    devices.filter((device) => device.type === type).map((device) => [device.id, device]),
+  ).values()];
+  const hardwareId = /\(([0-9a-f]{4}):([0-9a-f]{4})\)\s*$/i.exec(selectedName.trim());
+  const compactHardwareId = hardwareId ? `${hardwareId[1]}${hardwareId[2]}`.toLocaleLowerCase() : undefined;
+  const hardwareMatches = compactHardwareId
+    ? typedDevices.filter((device) => device.id.toLocaleLowerCase().replace(/[^0-9a-f]/g, "").includes(compactHardwareId))
+    : [];
+  if (hardwareMatches.length === 1) {
+    return hardwareMatches[0].id;
+  }
+
+  const normalizedName = normalizeCaptureDeviceName(selectedName);
+  const nameMatches = typedDevices.filter((device) => normalizeCaptureDeviceName(device.name) === normalizedName);
+  if (nameMatches.length === 1) {
+    return nameMatches[0].id;
+  }
+
+  if (hardwareMatches.length > 1 || nameMatches.length > 1) {
+    throw new Error(`More than one native ${type} device matches "${selectedName}". Choose a uniquely identified input.`);
+  }
+
+  const available = typedDevices.map((device) => device.name).join(", ") || "none";
+  throw new Error(`Selected ${type} device "${selectedName}" is not available to the native recorder. Available ${type} devices: ${available}.`);
+}
+
+function getSourceDimensions(layer: RecordingLayer): { width: number; height: number } {
+  if (layer.sourceDimensions) {
+    return layer.sourceDimensions;
+  }
+  switch (layer.captureResolution) {
+    case "720p": return CAPTURE_SIZES["720p"];
+    case "1080p": return CAPTURE_SIZES["1080p"];
+    case "1440p": return CAPTURE_SIZES["1440p"];
+    case "2160p": return CAPTURE_SIZES["2160p"];
+  }
+}
+
+function runFfmpeg(
+  args: string[],
+  onSpawn: (child: FfmpegProcess) => void,
+  onClose: (child: FfmpegProcess) => void,
+  onOutputTime: (microseconds: number) => void,
+): Promise<void> {
+  const ffmpegPath = process.env.DUI_STUDIO_FFMPEG_PATH || "ffmpeg";
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
+    onSpawn(child);
+    let stderr = "";
+    let progressRemainder = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr = `${stderr}${chunk}`.slice(-12_000);
+      const lines = `${progressRemainder}${chunk}`.split(/\r?\n/);
+      progressRemainder = lines.pop() ?? "";
+      for (const line of lines) {
+        const separator = line.indexOf("=");
+        if (separator < 0 || line.slice(0, separator) !== "out_time_us") {
+          continue;
+        }
+        const microseconds = Number(line.slice(separator + 1));
+        if (Number.isFinite(microseconds) && microseconds >= 0) {
+          onOutputTime(microseconds);
+        }
+      }
+    });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      onClose(child);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}: ${stderr.trim() || "No diagnostic output."}`));
+      }
+    });
+  });
+}
+
+export class RecordingService {
+  private projectFile?: string;
+  private projectDirectory?: string;
+  private projectMetadata?: ProjectMetadata;
+  private active = false;
+  private postProcessingState: PostProcessingState = "NOT_STARTED";
+  private exportPath: string | null = null;
+  private exportPaths: Partial<Record<RecordingMode, string>> = {};
+  private exportStates: RecordingExport[] = [];
+  private activeExportPath?: string;
+  private postProcessingError?: string;
+  private finalizedResult?: RecordingResult;
+  private postProcessingProcess?: FfmpegProcess;
+
+  constructor(private readonly mediaCore: MediaCoreService) {}
+
+  async start(request: StartRecordingRequest): Promise<RecordingResult> {
+    if (this.active) {
+      return failure(request, "A recording is already in progress.");
+    }
+    if (this.postProcessingState === "PROCESSING") {
+      return failure(request, "Wait for both layout exports to finish before starting another recording.");
+    }
+    this.active = true;
+    let coreStarted = false;
+    try {
+      if (process.platform === "darwin") {
+        const needsCamera = Boolean(request.captureCard || request.camera);
+        const needsMic = Boolean(request.gameAudio || request.microphoneEnabled !== false);
+        if (needsCamera && !(await systemPreferences.askForMediaAccess("camera"))) {
+          this.active = false;
+          return failure(request, "Camera access was denied. Allow it in System Settings > Privacy & Security.");
+        }
+        if (needsMic && !(await systemPreferences.askForMediaAccess("microphone"))) {
+          this.active = false;
+          return failure(request, "Microphone access was denied. Allow it in System Settings > Privacy & Security.");
+        }
+      }
+
+      const recordingId = new Date().toISOString().replace(/[:.]/g, "-");
+      const directory = join(app.getPath("videos"), "DUI Studio", `recording-${recordingId}`);
+      await mkdir(join(directory, "exports"), { recursive: true });
+      this.projectDirectory = directory;
+      this.projectFile = join(directory, "project.json");
+      this.postProcessingState = "NOT_STARTED";
+      this.exportPath = null;
+      this.exportPaths = {};
+      this.exportStates = [];
+      this.activeExportPath = undefined;
+      this.postProcessingError = undefined;
+      this.finalizedResult = undefined;
+      const projectMetadata: ProjectMetadata = {
+        recordingId,
+        createdAt: new Date().toISOString(),
+        status: "STARTING",
+        recordingMode: request.mode,
+        canvas: { horizontal: CANVAS.HORIZONTAL, vertical: CANVAS.VERTICAL, fps: request.fps },
+        sources: {
+          master: "master.mkv",
+          videoTracks: [],
+          audioTracks: [],
+          timestamps: {
+            clock: "CoreMedia host clock, relative to recorder start",
+            sourceOffsetsMs: {},
+          },
+        },
+        scene: request.scene,
+        audio: {
+          gameVolume: request.gameVolume,
+          microphoneVolume: request.microphoneVolume,
+          microphoneEnabled: request.microphoneEnabled !== false,
+          sampleRate: 48000,
+          channels: 2,
+        },
+        capture: {
+          fps: request.fps,
+          captureCard: request.captureCard ?? null,
+          camera: request.camera ?? null,
+          gameAudio: request.gameAudio ?? null,
+          microphone: request.microphone ?? null,
+          captureWidth: request.captureWidth ?? null,
+          captureHeight: request.captureHeight ?? null,
+          videoEncoder: "H.264 VideoToolbox when available",
+        },
+        postProcessingStatus: "NOT_STARTED",
+        exportFiles: {},
+        exports: [],
+      };
+      this.projectMetadata = projectMetadata;
+      await this.writeProject();
+
+      let nativeRequest = request;
+      if (process.platform === "darwin") {
+        const nativeDevices = await this.mediaCore.listDevices();
+        nativeRequest = {
+          ...request,
+          captureCard: request.captureCard
+            ? nativeDeviceId(request.captureCard, "video", nativeDevices)
+            : undefined,
+          camera: request.camera ? nativeDeviceId(request.camera, "video", nativeDevices) : undefined,
+          gameAudio: request.gameAudio ? nativeDeviceId(request.gameAudio, "audio", nativeDevices) : undefined,
+          microphone: request.microphone ? nativeDeviceId(request.microphone, "audio", nativeDevices) : undefined,
+        };
+      }
+      const result = await this.mediaCore.startRecording(directory, nativeRequest);
+      if (!result.success) {
+        this.active = false;
+        projectMetadata.status = "ERROR";
+        projectMetadata.error = result.error;
+        await this.writeProject();
+      } else {
+        coreStarted = true;
+        projectMetadata.status = "RECORDING";
+        projectMetadata.startedAt = new Date().toISOString();
+        await this.writeProject();
+      }
+      return this.withPostProcessing(result);
+    } catch (error) {
+      this.active = false;
+      if (coreStarted) {
+        try {
+          await this.mediaCore.stopRecording();
+        } catch (stopError) {
+          console.error("Unable to stop media core after recording setup failed:", stopError);
+        }
+      }
+      if (this.projectMetadata) {
+        this.projectMetadata.status = "ERROR";
+        this.projectMetadata.error = error instanceof Error ? error.message : String(error);
+        await this.writeProject();
+      }
+      throw error;
+    }
+  }
+
+  async stop(): Promise<RecordingResult> {
+    if (!this.active) {
+      const result = await this.mediaCore.getRecordingStatus();
+      return {
+        ...result,
+        state: "ERROR",
+        success: false,
+        error: "No recording is in progress.",
+        postProcessingState: this.postProcessingState,
+        exportPath: this.exportPath,
+        exportPaths: { ...this.exportPaths },
+        exports: this.exportStates.map((entry) => ({ ...entry })),
+      };
+    }
+    const result = await this.mediaCore.stopRecording();
+    if (!this.projectMetadata || !this.projectFile || !this.projectDirectory) {
+      return this.withPostProcessing(result);
+    }
+    this.active = false;
+    this.finalizedResult = result;
+    this.projectMetadata.durationMs = result.durationMs;
+    this.projectMetadata.stoppedAt = new Date().toISOString();
+    this.projectMetadata.status = result.success ? "SOURCE_FINALIZED" : "ERROR";
+    this.projectMetadata.sources = {
+      master: "master.mkv",
+      videoTracks: result.videoTracks,
+      audioTracks: result.audioTracks,
+      timestamps: {
+        clock: "CoreMedia host clock, relative to recorder start",
+        sourceOffsetsMs: Object.fromEntries((result.trackStats ?? []).map((track) => [track.name, track.startOffsetMs])),
+      },
+    };
+    this.projectMetadata.trackStats = result.trackStats ?? [];
+    const videoEncoder = result.trackStats?.find((track) => track.kind === "video")?.codec;
+    const audioEncoder = result.trackStats?.find((track) => track.kind === "audio")?.codec;
+    const capture = this.projectMetadata.capture as Record<string, unknown>;
+    capture.videoEncoder = videoEncoder ?? "unknown";
+    capture.audioEncoder = audioEncoder ?? "unknown";
+    this.projectMetadata.recordingResult = result;
+
+    if (!result.success) {
+      this.projectMetadata.error = result.error;
+      await this.writeProject();
+      return this.withPostProcessing({ ...result, postProcessingState: "NOT_STARTED", exportPath: null });
+    }
+
+    this.postProcessingState = "PROCESSING";
+    this.postProcessingError = undefined;
+    this.projectMetadata.postProcessingStartedAt = new Date().toISOString();
+    const horizontalPath = join(this.projectDirectory, "exports", "horizontal.mp4");
+    const verticalPath = join(this.projectDirectory, "exports", "vertical.mp4");
+    this.exportPaths = { HORIZONTAL: horizontalPath, VERTICAL: verticalPath };
+    this.exportPath = this.exportPaths[result.recordingMode] ?? this.exportPaths.HORIZONTAL ?? null;
+    this.exportStates = [
+      { mode: "HORIZONTAL", path: horizontalPath, state: "PENDING", progress: 0 },
+      { mode: "VERTICAL", path: verticalPath, state: "PENDING", progress: 0 },
+    ];
+    this.projectMetadata.postProcessingStatus = this.postProcessingState;
+    this.projectMetadata.exportFiles = { ...this.exportPaths };
+    this.projectMetadata.exports = this.exportStates;
+    try {
+      await this.writeProject();
+    } catch (error) {
+      await this.handlePostProcessingFailure(new Error(`Unable to save project metadata before export: ${error instanceof Error ? error.message : String(error)}`));
+      return this.withPostProcessing(result);
+    }
+
+    this.launchPostProcessing(result);
+    return this.withPostProcessing(result);
+  }
+
+  async getStatus(): Promise<RecordingResult> {
+    const result = await this.mediaCore.getRecordingStatus();
+    return this.withPostProcessing(result);
+  }
+
+  private withPostProcessing(result: RecordingResult): RecordingResult {
+    return {
+      ...result,
+      error: this.postProcessingError ?? result.error,
+      postProcessingState: this.postProcessingState,
+      exportPath: this.exportPath,
+      exportPaths: { ...this.exportPaths },
+      exports: this.exportStates.map((entry) => ({ ...entry })),
+    };
+  }
+
+  stopPostProcessing(): void {
+    if (this.postProcessingProcess && !this.postProcessingProcess.killed) {
+      this.postProcessingProcess.kill("SIGTERM");
+    }
+  }
+
+  async retryPostProcessing(): Promise<RecordingResult> {
+    if (this.active || this.postProcessingState === "PROCESSING") {
+      throw new Error("Post-processing cannot be retried while recording or exporting is active.");
+    }
+    const result = this.finalizedResult;
+    if (!result?.success || !this.projectMetadata || !this.projectFile || !this.projectDirectory) {
+      throw new Error("There is no finalized source recording available to export.");
+    }
+    this.postProcessingState = "PROCESSING";
+    this.postProcessingError = undefined;
+    this.exportPath = this.exportPaths[result.recordingMode] ?? null;
+    this.exportStates = this.exportStates.map((entry) => (
+      entry.state === "COMPLETED"
+        ? entry
+        : { ...entry, state: "PENDING", progress: 0, error: undefined }
+    ));
+    this.projectMetadata.postProcessingStatus = this.postProcessingState;
+    this.projectMetadata.status = "SOURCE_FINALIZED";
+    this.projectMetadata.postProcessingError = null;
+    this.projectMetadata.postProcessingFailedAt = null;
+    this.projectMetadata.exports = this.exportStates;
+    this.projectMetadata.postProcessingStartedAt = new Date().toISOString();
+    try {
+      await this.writeProject();
+    } catch (error) {
+      await this.handlePostProcessingFailure(new Error(`Unable to save project metadata before retry: ${error instanceof Error ? error.message : String(error)}`));
+      throw error;
+    }
+    this.launchPostProcessing(result);
+    return this.withPostProcessing(result);
+  }
+
+  private launchPostProcessing(result: RecordingResult): void {
+    void this.postProcess(result).catch((error: unknown) => this.handlePostProcessingFailure(error));
+  }
+
+  private async handlePostProcessingFailure(error: unknown): Promise<void> {
+    this.postProcessingState = "ERROR";
+    this.postProcessingError = error instanceof Error ? error.message : String(error);
+    const activeExport = this.exportStates.find((entry) => entry.state === "PROCESSING");
+    if (activeExport) {
+      activeExport.state = "ERROR";
+      activeExport.error = this.postProcessingError;
+    }
+    if (this.projectMetadata) {
+      this.projectMetadata.postProcessingStatus = this.postProcessingState;
+      this.projectMetadata.status = "EXPORT_FAILED";
+      this.projectMetadata.postProcessingError = this.postProcessingError;
+      this.projectMetadata.postProcessingFailedAt = new Date().toISOString();
+      this.projectMetadata.exports = this.exportStates;
+    }
+    if (this.activeExportPath) {
+      await rm(this.activeExportPath, { force: true }).catch((cleanupError: unknown) => {
+        console.error("Unable to remove incomplete export:", cleanupError);
+      });
+      this.activeExportPath = undefined;
+    }
+    try {
+      await this.writeProject();
+    } catch (metadataError) {
+      console.error("Unable to save post-processing failure to project metadata:", metadataError);
+    }
+    console.error("Recording post-processing failed:", error);
+  }
+
+  private async postProcess(result: RecordingResult): Promise<void> {
+    const project = this.projectMetadata;
+    const scene = project?.scene as RecordingScene | undefined;
+    if (!project || !scene || !this.projectDirectory) {
+      throw new Error("The shared scene configuration was not saved with this recording.");
+    }
+    const failedExports: string[] = [];
+    for (const exportEntry of this.exportStates) {
+      if (exportEntry.state === "COMPLETED") {
+        continue;
+      }
+      exportEntry.state = "PROCESSING";
+      exportEntry.error = undefined;
+      exportEntry.progress = 0;
+      this.activeExportPath = exportEntry.path;
+      project.exports = this.exportStates;
+      await this.writeProject();
+      try {
+        await this.renderLayout(
+          result,
+          exportEntry.mode,
+          scene,
+          exportEntry.path,
+          project,
+          (progress) => { exportEntry.progress = progress; },
+        );
+        exportEntry.state = "COMPLETED";
+        exportEntry.progress = 100;
+      } catch (error) {
+        exportEntry.state = "ERROR";
+        exportEntry.error = error instanceof Error ? error.message : String(error);
+        failedExports.push(`${exportEntry.mode}: ${exportEntry.error}`);
+        await rm(exportEntry.path, { force: true }).catch((cleanupError: unknown) => {
+          console.error(`Unable to remove incomplete ${exportEntry.mode} export:`, cleanupError);
+        });
+        console.error(`${exportEntry.mode} export failed:`, error);
+      } finally {
+        this.activeExportPath = undefined;
+      }
+      project.exports = this.exportStates;
+      await this.writeProject();
+    }
+
+    this.postProcessingState = failedExports.length > 0 ? "ERROR" : "COMPLETED";
+    this.postProcessingError = failedExports.length > 0 ? failedExports.join("; ") : undefined;
+    project.postProcessingStatus = this.postProcessingState;
+    project.status = failedExports.length > 0 ? "EXPORT_FAILED" : "COMPLETED";
+    project.postProcessingError = this.postProcessingError ?? null;
+    if (failedExports.length > 0) {
+      project.postProcessingFailedAt = new Date().toISOString();
+      project.postProcessingCompletedAt = null;
+    } else {
+      project.postProcessingFailedAt = null;
+      project.postProcessingCompletedAt = new Date().toISOString();
+    }
+    await this.writeProject();
+  }
+
+  private async renderLayout(
+    result: RecordingResult,
+    mode: RecordingMode,
+    scene: RecordingScene,
+    exportPath: string,
+    project: ProjectMetadata,
+    onProgress: (progress: number) => void,
+  ): Promise<void> {
+    const projectDirectory = this.projectDirectory;
+    if (!projectDirectory) {
+      throw new Error("The recording project directory is unavailable.");
+    }
+    const videoTracks = result.videoTracks;
+    const activeLayers = scene.layers.filter((layer) => layer.enabled);
+    if (activeLayers.some((layer) => layer.kind === "display-capture")) {
+      throw new Error(`${mode} scene includes display capture, which the native media core does not record.`);
+    }
+    const videoLayers = activeLayers.filter((layer) => layer.kind === "game-capture" || layer.kind === "camera-device").reverse();
+    if (videoLayers.length === 0) {
+      throw new Error(`${mode} scene has no recorded capture-card or webcam video source.`);
+    }
+    const audioTrackNames = result.audioTracks;
+    const audioSettings = project.audio && typeof project.audio === "object"
+      ? project.audio as { gameVolume?: number; microphoneVolume?: number }
+      : {};
+    const audioLayers = [
+      { trackName: "Game Audio", volume: finite(audioSettings.gameVolume ?? 1, 1) },
+      { trackName: "Microphone", volume: finite(audioSettings.microphoneVolume ?? 1, 1) },
+    ].filter((track) => audioTrackNames.includes(track.trackName));
+    const trackStartOffsetMs = (name: string, kind: "video" | "audio") => {
+      const track = result.trackStats?.find((candidate) => candidate.name === name && candidate.kind === kind);
+      return Math.max(0, Math.round(finite(track?.startOffsetMs ?? 0)));
+    };
+
+    const canvas = mode === "VERTICAL" ? CANVAS.VERTICAL : CANVAS.HORIZONTAL;
+    const width = canvas.width;
+    const height = canvas.height;
+    const fps = Math.round(finite((project.canvas as { fps?: number }).fps ?? 60, 60));
+    const durationSeconds = Math.max(0.1, result.durationMs / 1000);
+    const graph: string[] = [`color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}[base0]`];
+    let currentVideo = "base0";
+    let nextLayer = 0;
+    for (const layer of videoLayers) {
+      const trackName = layer.kind === "game-capture" ? "Gameplay" : "Webcam";
+      const trackIndex = videoTracks.indexOf(trackName);
+      if (trackIndex < 0) {
+        throw new Error(`${trackName} is configured in the scene but has no recorded video track.`);
+      }
+      const source = getSourceDimensions(layer);
+      const sourceWidth = Math.max(2, finite(source.width, 1920));
+      const sourceHeight = Math.max(2, finite(source.height, 1080));
+      const crop = layer.crop;
+      const left = Math.max(0, Math.min(sourceWidth - 2, Math.round(finite(crop.left))));
+      const right = Math.max(0, Math.min(sourceWidth - left - 2, Math.round(finite(crop.right))));
+      const top = Math.max(0, Math.min(sourceHeight - 2, Math.round(finite(crop.top))));
+      const bottom = Math.max(0, Math.min(sourceHeight - top - 2, Math.round(finite(crop.bottom))));
+      const transform = layer.transforms[mode === "VERTICAL" ? "portrait" : "landscape"];
+      const visibleWidth = sourceWidth - left - right;
+      const visibleHeight = sourceHeight - top - bottom;
+      const xPct = finite(transform.x) + finite(transform.width) * left / sourceWidth;
+      const yPct = finite(transform.y) + finite(transform.height) * top / sourceHeight;
+      const targetWidth = evenDimension(width * finite(transform.width) * visibleWidth / sourceWidth / 100);
+      const targetHeight = evenDimension(height * finite(transform.height) * visibleHeight / sourceHeight / 100);
+      const x = Math.round(width * xPct / 100);
+      const y = Math.round(height * yPct / 100);
+      const sourceOffsetSeconds = (trackStartOffsetMs(trackName, "video") / 1000).toFixed(3);
+      const layerLabel = `layer${nextLayer}`;
+      const composedLabel = `base${nextLayer + 1}`;
+      graph.push(
+        `[0:v:${trackIndex}]setpts=PTS-STARTPTS+${sourceOffsetSeconds}/TB,crop=iw-${left + right}:ih-${top + bottom}:${left}:${top},scale=${targetWidth}:${targetHeight}:flags=lanczos,setsar=1,format=rgba[${layerLabel}]`,
+      );
+      graph.push(`[${currentVideo}][${layerLabel}]overlay=${x}:${y}:eof_action=pass:shortest=0[${composedLabel}]`);
+      currentVideo = composedLabel;
+      nextLayer += 1;
+    }
+
+    const args = [
+      "-hide_banner",
+      "-loglevel", "error",
+      "-progress", "pipe:2",
+      "-nostats",
+      "-y",
+      "-i", join(projectDirectory, "master.mkv"),
+    ];
+    const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
+    const microphone = audioLayers.find((track) => track.trackName === "Microphone");
+    const inputFor = (track: (typeof audioLayers)[number]) => `[0:a:${audioTrackNames.indexOf(track.trackName)}]`;
+    const gainFor = (track: (typeof audioLayers)[number]) => Math.max(0, Math.min(1, track.volume)).toFixed(4);
+    const alignAudioTrack = (track: (typeof audioLayers)[number]) => {
+      const delayMs = trackStartOffsetMs(track.trackName, "audio");
+      const delay = delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : "";
+      return `${inputFor(track)}aresample=48000,asetpts=PTS-STARTPTS${delay}`;
+    };
+    let audioOutputLabel: string | undefined;
+    if (gameAudio && microphone) {
+      graph.push(`${alignAudioTrack(gameAudio)},volume=${gainFor(gameAudio)}[gameAudio]`);
+      graph.push(
+        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4[voice]`,
+      );
+      graph.push("[voice]asplit=2[voiceSidechain][voiceMix]");
+      graph.push("[gameAudio][voiceSidechain]sidechaincompress=threshold=0.01:ratio=12:attack=10:release=400[duckedGame]");
+      graph.push("[duckedGame][voiceMix]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95[mixedAudio]");
+      audioOutputLabel = "[mixedAudio]";
+    } else if (microphone) {
+      graph.push(
+        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4,alimiter=limit=0.95[mixedAudio]`,
+      );
+      audioOutputLabel = "[mixedAudio]";
+    } else if (gameAudio) {
+      graph.push(`${alignAudioTrack(gameAudio)},volume=${gainFor(gameAudio)},alimiter=limit=0.95[mixedAudio]`);
+      audioOutputLabel = "[mixedAudio]";
+    }
+    args.push("-filter_complex", graph.join(";"), "-map", `[${currentVideo}]`);
+    if (audioOutputLabel) {
+      args.push("-map", audioOutputLabel);
+    }
+    args.push(
+      "-t", durationSeconds.toFixed(3),
+      "-r", String(fps),
+      "-c:v", "h264_videotoolbox", "-allow_sw", "1",
+      ...(audioOutputLabel ? ["-c:a", "aac", "-b:a", "192k"] : []),
+      "-movflags", "+faststart",
+      exportPath,
+    );
+
+    try {
+      await this.runFfmpegTracked(args, durationSeconds, onProgress);
+    } catch (hardwareError) {
+      await rm(exportPath, { force: true });
+      onProgress(0);
+      const softwareArgs = [...args];
+      const encoderIndex = softwareArgs.indexOf("h264_videotoolbox");
+      if (encoderIndex < 0) {
+        throw hardwareError;
+      }
+      softwareArgs[encoderIndex] = "libx264";
+      softwareArgs.splice(encoderIndex + 1, 0, "-preset", "veryfast", "-crf", "20");
+      const softwareFallbackIndex = softwareArgs.indexOf("-allow_sw");
+      if (softwareFallbackIndex >= 0) {
+        softwareArgs.splice(softwareFallbackIndex, 2);
+      }
+      await this.runFfmpegTracked(softwareArgs, durationSeconds, onProgress);
+    }
+  }
+
+  private runFfmpegTracked(
+    args: string[],
+    durationSeconds: number,
+    onProgress: (progress: number) => void,
+  ): Promise<void> {
+    return runFfmpeg(
+      args,
+      (child) => { this.postProcessingProcess = child; },
+      (child) => {
+        if (this.postProcessingProcess === child) {
+          this.postProcessingProcess = undefined;
+        }
+      },
+      (microseconds) => {
+        const progress = Math.min(99, Math.round(
+          Math.min(1, microseconds / (durationSeconds * 1_000_000)) * 100,
+        ));
+        onProgress(progress);
+      },
+    );
+  }
+
+  private async writeProject(): Promise<void> {
+    if (this.projectFile && this.projectMetadata) {
+      await writeFile(this.projectFile, JSON.stringify(this.projectMetadata, null, 2));
+    }
+  }
+}

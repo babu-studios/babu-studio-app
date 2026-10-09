@@ -42,4 +42,4 @@ scripts/
 docs/
 ```
 
-Electron owns the desktop window and renderer IPC. Its main process starts the C++ media-core host and exchanges newline-delimited commands with it. The host links the reusable C++ core library; macOS capture implementations will be added behind platform-specific interfaces.
+Electron owns the desktop window and renderer IPC. Its main process starts the C++ media-core host and exchanges newline-delimited commands with it. The host links the reusable C++ core library; AVFoundation capture adapters live in `core/src/platform/macos/`. Electron stores recording project metadata and runs sequential FFmpeg exports after source files are finalized.
