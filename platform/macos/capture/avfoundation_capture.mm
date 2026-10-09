@@ -266,9 +266,9 @@ class SessionWatcher {
   std::string message_;
 };
 
-class MacVideoSource : public NativeVideoSource {
+class AvFoundationVideoSource : public NativeVideoSource {
  public:
-  ~MacVideoSource() override { stop(); }
+  ~AvFoundationVideoSource() override { stop(); }
 
   bool open(const VideoSourceConfig& config, VideoSourceInfo& info, std::string& error) override {
     if (!check_access(AVMediaTypeVideo, "Camera", error)) {
@@ -411,9 +411,9 @@ class MacVideoSource : public NativeVideoSource {
   SessionWatcher watcher_;
 };
 
-class MacAudioSource : public NativeAudioSource {
+class AvFoundationAudioSource : public NativeAudioSource {
  public:
-  ~MacAudioSource() override { stop(); }
+  ~AvFoundationAudioSource() override { stop(); }
 
   bool open(const AudioSourceConfig& config, std::string& device_name, std::string& error) override {
     if (!check_access(AVMediaTypeAudio, "Microphone", error)) {
@@ -577,16 +577,16 @@ std::string devices_to_json(const std::vector<DeviceInfo>& devices) {
   return out.str();
 }
 
-std::unique_ptr<NativeVideoSource> create_native_video_source() { return std::make_unique<MacVideoSource>(); }
-std::unique_ptr<NativeAudioSource> create_native_audio_source() { return std::make_unique<MacAudioSource>(); }
+std::unique_ptr<NativeVideoSource> create_native_video_source() { return std::make_unique<AvFoundationVideoSource>(); }
+std::unique_ptr<NativeAudioSource> create_native_audio_source() { return std::make_unique<AvFoundationAudioSource>(); }
 
-void* retain_pixel_buffer(void* pixel_buffer) { return (void*)CVPixelBufferRetain((CVPixelBufferRef)pixel_buffer); }
+void* retain_native_video_frame(void* native_frame) { return (void*)CVPixelBufferRetain((CVPixelBufferRef)native_frame); }
 
-void release_pixel_buffer(void* pixel_buffer) { CVPixelBufferRelease((CVPixelBufferRef)pixel_buffer); }
+void release_native_video_frame(void* native_frame) { CVPixelBufferRelease((CVPixelBufferRef)native_frame); }
 
-bool copy_pixel_buffer_nv12(void* pixel_buffer, std::uint8_t* y, const int y_stride, std::uint8_t* uv, const int uv_stride,
-                            const int width, const int height) {
-  CVPixelBufferRef buffer = (CVPixelBufferRef)pixel_buffer;
+bool copy_native_video_frame_nv12(void* native_frame, std::uint8_t* y, const int y_stride, std::uint8_t* uv,
+                                 const int uv_stride, const int width, const int height) {
+  CVPixelBufferRef buffer = (CVPixelBufferRef)native_frame;
   const OSType format = CVPixelBufferGetPixelFormatType(buffer);
   if (format != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange && format != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
     return false;

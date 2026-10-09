@@ -32,7 +32,7 @@ std::string av_message(const int code) {
   return buffer;
 }
 
-void release_buffer(void*, std::uint8_t* data) { release_pixel_buffer(data); }
+void release_buffer(void*, std::uint8_t* data) { release_native_video_frame(data); }
 
 }  // namespace
 
@@ -450,10 +450,10 @@ void MasterRecorder::push_video(Track& track, void* pixel_buffer, const std::int
   frame->height = track.height;
   if (track.zero_copy) {
     frame->format = AV_PIX_FMT_VIDEOTOOLBOX;
-    frame->data[3] = static_cast<std::uint8_t*>(retain_pixel_buffer(pixel_buffer));
+    frame->data[3] = static_cast<std::uint8_t*>(retain_native_video_frame(pixel_buffer));
     frame->buf[0] = av_buffer_create(frame->data[3], 1, release_buffer, nullptr, 0);
     if (frame->buf[0] == nullptr) {
-      release_pixel_buffer(frame->data[3]);
+      release_native_video_frame(frame->data[3]);
       frame->data[3] = nullptr;
       fail("Out of memory while queueing a video frame.");
       return;
@@ -466,8 +466,8 @@ void MasterRecorder::push_video(Track& track, void* pixel_buffer, const std::int
       return;
     }
     if (track.encoder->pix_fmt == AV_PIX_FMT_NV12) {
-      if (!copy_pixel_buffer_nv12(pixel_buffer, frame->data[0], frame->linesize[0], frame->data[1],
-                                  frame->linesize[1], track.width, track.height)) {
+      if (!copy_native_video_frame_nv12(pixel_buffer, frame->data[0], frame->linesize[0], frame->data[1],
+                                        frame->linesize[1], track.width, track.height)) {
         av_frame_unref(frame);
         ++dropped_video_;
         return;
@@ -475,8 +475,8 @@ void MasterRecorder::push_video(Track& track, void* pixel_buffer, const std::int
     } else {
       AVFrame* input = track.input_frame;
       if (input == nullptr || av_frame_make_writable(input) < 0
-          || !copy_pixel_buffer_nv12(pixel_buffer, input->data[0], input->linesize[0], input->data[1],
-                                     input->linesize[1], track.width, track.height)
+          || !copy_native_video_frame_nv12(pixel_buffer, input->data[0], input->linesize[0], input->data[1],
+                                           input->linesize[1], track.width, track.height)
           || sws_scale(track.sws_context, input->data, input->linesize, 0, track.height, frame->data,
                        frame->linesize) <= 0) {
         av_frame_unref(frame);

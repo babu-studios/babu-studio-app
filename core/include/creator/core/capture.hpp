@@ -47,10 +47,9 @@ struct VideoSourceInfo {
   double fps = 0;
 };
 
-// pixel_buffer is a borrowed CVPixelBufferRef valid only during the callback;
-// retain it (CVPixelBufferRetain) to keep it longer. host_time_us is the
-// CoreMedia host-clock presentation time of the frame.
-using VideoFrameCallback = std::function<void(void* pixel_buffer, std::int64_t host_time_us)>;
+// The native frame is borrowed for the callback's duration. Retain it to use it
+// asynchronously; host_time_us uses the adapter's monotonic capture clock.
+using VideoFrameCallback = std::function<void(void* native_frame, std::int64_t host_time_us)>;
 
 class NativeVideoSource {
  public:
@@ -67,7 +66,7 @@ struct AudioSourceConfig {
   bool require_name = false;
 };
 
-// Interleaved float32 PCM, always stereo at 48 kHz (macOS converts for us).
+// Adapters provide interleaved float32 PCM in stereo at 48 kHz.
 using AudioChunkCallback = std::function<void(const float* interleaved, int frames, std::int64_t host_time_us)>;
 
 class NativeAudioSource {
@@ -82,14 +81,14 @@ class NativeAudioSource {
 std::unique_ptr<NativeVideoSource> create_native_video_source();
 std::unique_ptr<NativeAudioSource> create_native_audio_source();
 
-// Pixel buffer helpers so the portable recorder never touches CoreVideo directly.
-void* retain_pixel_buffer(void* pixel_buffer);
-void release_pixel_buffer(void* pixel_buffer);
-// Copies a bi-planar NV12 buffer into caller planes. Returns false for other formats.
-bool copy_pixel_buffer_nv12(void* pixel_buffer, std::uint8_t* y, int y_stride, std::uint8_t* uv, int uv_stride,
-                            int width, int height);
+// Native frame helpers keep platform media types out of the shared recorder.
+void* retain_native_video_frame(void* native_frame);
+void release_native_video_frame(void* native_frame);
+// Copies a bi-planar NV12 frame into caller planes. Returns false for other formats.
+bool copy_native_video_frame_nv12(void* native_frame, std::uint8_t* y, int y_stride, std::uint8_t* uv, int uv_stride,
+                                  int width, int height);
 
-// CoreMedia host clock in microseconds; the same timebase capture timestamps use.
+// Monotonic clock in microseconds, sharing the capture timestamp timebase.
 std::int64_t host_time_now_us();
 
 }  // namespace creator::core

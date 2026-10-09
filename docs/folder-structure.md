@@ -10,36 +10,30 @@ apps/
     renderer/
       react/
         src/
-          components/     # Common UI and studio panels
-          pages/          # Home, Studio, and Settings screens
-          hooks/
-          stores/
-          services/       # Typed renderer-side IPC clients
-          types/
-          utils/
+          components/
+            common/       # Shared Dropdown and IconButton components
+          App.tsx
+          main.tsx
+          styles.css
 core/
-  include/creator/        # Public C++ interfaces
+  include/creator/core/   # Shared media-core interfaces
   src/
-    core/                 # Platform-independent media core
+    core/                 # Shared media-core recording logic
     host/                 # stdio process entry point
-    capture/
-    audio/
-    scene/
-    compositor/
-    recorder/
-    streaming/
-    postprocess/
-    project/
-  tests/
+  tests/                  # Media-core tests
 platform/
-  macos/                  # ScreenCaptureKit, AVFoundation, and CoreAudio adapters
+  macos/
+    CMakeLists.txt        # macOS adapter sources and framework links
+    capture/
+      avfoundation_capture.mm
 shared/
+  constants/
   protocol/               # Electron-to-core wire protocol
   types/                  # Shared TypeScript contracts
-tests/
-  integration/
 scripts/
 docs/
 ```
 
-Electron owns the desktop window and renderer IPC. Its main process starts the C++ media-core host and exchanges newline-delimited commands with it. The host links the reusable C++ core library; AVFoundation capture adapters live in `core/src/platform/macos/`. Electron stores recording project metadata and runs sequential FFmpeg exports after source files are finalized.
+Electron owns the desktop window and renderer IPC. Its main process starts the C++ media-core host and exchanges newline-delimited commands with it. The host links the reusable C++ core library; AVFoundation capture adapters live under `platform/macos/`. Electron stores recording project metadata and runs sequential FFmpeg exports after source files are finalized.
+
+Keep operating-system APIs and framework dependencies in `platform/<os>/`; `core/` owns shared interfaces and recording logic. Windows support is not implemented yet. When work begins, add the Windows adapter and build configuration alongside the existing macOS implementation rather than keeping empty Windows folders in the repository.

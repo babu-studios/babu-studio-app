@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-project(creator_media_core VERSION 0.1.0 LANGUAGES CXX OBJCXX)
+project(creator_media_core VERSION 0.1.0 LANGUAGES CXX)
+
+if(APPLE)
+  enable_language(OBJCXX)
+elseif(WIN32)
+  message(FATAL_ERROR "Windows native capture is not implemented yet. Add the Media Foundation adapter under platform/windows.")
+else()
+  message(FATAL_ERROR "The media core currently supports macOS only.")
+endif()
 
 include(CTest)
 
@@ -9,15 +17,9 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavut
 add_library(creator_media_core STATIC
   src/core/media_core.cpp
   src/core/master_recorder.cpp
-  src/platform/macos/mac_capture.mm
 )
-set_source_files_properties(src/platform/macos/mac_capture.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-find_library(AVFOUNDATION_LIB AVFoundation REQUIRED)
-find_library(COREMEDIA_LIB CoreMedia REQUIRED)
-find_library(COREVIDEO_LIB CoreVideo REQUIRED)
-find_library(FOUNDATION_LIB Foundation REQUIRED)
-target_link_libraries(creator_media_core PUBLIC ${AVFOUNDATION_LIB} ${COREMEDIA_LIB} ${COREVIDEO_LIB} ${FOUNDATION_LIB})
-set_target_properties(creator_media_core PROPERTIES OBJCXX_STANDARD 20)
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../platform/macos"
+  "${CMAKE_CURRENT_BINARY_DIR}/platform/macos")
 target_link_libraries(creator_media_core PUBLIC PkgConfig::FFMPEG)
 target_include_directories(creator_media_core
   PUBLIC
