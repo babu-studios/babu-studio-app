@@ -157,6 +157,10 @@ export class RecordingService {
   private projectDirectory?: string;
   private projectMetadata?: ProjectMetadata;
   private active = false;
+  private startPromise?: Promise<RecordingResult>;
+  private stopPromise?: Promise<RecordingResult>;
+  private retryPromise?: Promise<RecordingResult>;
+  private postProcessingPromise?: Promise<void>;
   private postProcessingState: PostProcessingState = "NOT_STARTED";
   private exportPath: string | null = null;
   private exportPaths: Partial<Record<RecordingMode, string>> = {};
@@ -164,18 +168,32 @@ export class RecordingService {
   private activeExportPath?: string;
   private postProcessingError?: string;
   private finalizedResult?: RecordingResult;
+  private stopResult?: RecordingResult;
   private postProcessingProcess?: FfmpegProcess;
 
   constructor(private readonly mediaCore: MediaCoreService) {}
 
   async start(request: StartRecordingRequest): Promise<RecordingResult> {
-    if (this.active) {
+    if (this.active || this.startPromise) {
       return failure(request, "A recording is already in progress.");
     }
     if (this.postProcessingState === "PROCESSING") {
       return failure(request, "Wait for both layout exports to finish before starting another recording.");
     }
+    this.stopResult = undefined;
     this.active = true;
+    const startPromise = this.beginRecording(request);
+    this.startPromise = startPromise;
+    try {
+      return await startPromise;
+    } finally {
+      if (this.startPromise === startPromise) {
+        this.startPromise = undefined;
+      }
+    }
+  }
+
+  private async beginRecording(request: StartRecordingRequest): Promise<RecordingResult> {
     let coreStarted = false;
     try {
       if (process.platform === "darwin") {
@@ -270,13 +288,16 @@ export class RecordingService {
       }
       return this.withPostProcessing(result);
     } catch (error) {
-      this.active = false;
       if (coreStarted) {
         try {
           await this.mediaCore.stopRecording();
+          this.active = false;
         } catch (stopError) {
+          this.active = true;
           console.error("Unable to stop media core after recording setup failed:", stopError);
         }
+      } else {
+        this.active = false;
       }
       if (this.projectMetadata) {
         this.projectMetadata.status = "ERROR";
@@ -288,6 +309,28 @@ export class RecordingService {
   }
 
   async stop(): Promise<RecordingResult> {
+    if (this.stopPromise) {
+      return this.stopPromise;
+    }
+    const stopPromise = this.stopAfterStart();
+    this.stopPromise = stopPromise;
+    try {
+      return await stopPromise;
+    } finally {
+      if (this.stopPromise === stopPromise) {
+        this.stopPromise = undefined;
+      }
+    }
+  }
+
+  private async stopAfterStart(): Promise<RecordingResult> {
+    const pendingStart = this.startPromise;
+    if (pendingStart) {
+      const started = await pendingStart;
+      if (!started.success) {
+        return this.withPostProcessing(started);
+      }
+    }
     if (!this.active) {
       const result = await this.mediaCore.getRecordingStatus();
       return {
@@ -302,11 +345,12 @@ export class RecordingService {
       };
     }
     const result = await this.mediaCore.stopRecording();
+    this.active = false;
+    this.finalizedResult = result;
+    this.stopResult = result;
     if (!this.projectMetadata || !this.projectFile || !this.projectDirectory) {
       return this.withPostProcessing(result);
     }
-    this.active = false;
-    this.finalizedResult = result;
     this.projectMetadata.durationMs = result.durationMs;
     this.projectMetadata.stoppedAt = new Date().toISOString();
     this.projectMetadata.status = result.success ? "SOURCE_FINALIZED" : "ERROR";
@@ -380,13 +424,66 @@ export class RecordingService {
     }
   }
 
+  async finishForShutdown(): Promise<void> {
+    if (this.startPromise) {
+      try {
+        await this.startPromise;
+      } catch (error) {
+        if (this.active) {
+          throw error;
+        }
+        console.error("Recording setup failed while preparing to quit:", error);
+      }
+    }
+    if (this.stopPromise) {
+      const result = await this.stopPromise;
+      if (!result.success && this.stopResult) {
+        throw new Error(result.error || "The recording could not be finalized.");
+      }
+    }
+    if (this.active) {
+      const result = await this.stop();
+      if (!result.success && this.stopResult) {
+        throw new Error(result.error || "The recording could not be finalized.");
+      }
+    }
+    if (this.retryPromise) {
+      await this.retryPromise;
+    }
+    if (this.postProcessingState === "PROCESSING" && this.postProcessingPromise) {
+      await this.postProcessingPromise;
+    }
+    if (this.postProcessingState === "ERROR") {
+      throw new Error(this.postProcessingError || "One or more layout exports failed.");
+    }
+  }
+
   async retryPostProcessing(): Promise<RecordingResult> {
+    if (this.retryPromise) {
+      throw new Error("Post-processing is already being retried.");
+    }
     if (this.active || this.postProcessingState === "PROCESSING") {
       throw new Error("Post-processing cannot be retried while recording or exporting is active.");
     }
     const result = this.finalizedResult;
     if (!result?.success || !this.projectMetadata || !this.projectFile || !this.projectDirectory) {
       throw new Error("There is no finalized source recording available to export.");
+    }
+    const retryPromise = this.beginRetryPostProcessing(result);
+    this.retryPromise = retryPromise;
+    try {
+      return await retryPromise;
+    } finally {
+      if (this.retryPromise === retryPromise) {
+        this.retryPromise = undefined;
+      }
+    }
+  }
+
+  private async beginRetryPostProcessing(result: RecordingResult): Promise<RecordingResult> {
+    const projectMetadata = this.projectMetadata;
+    if (!projectMetadata) {
+      throw new Error("The recording project metadata is unavailable.");
     }
     this.postProcessingState = "PROCESSING";
     this.postProcessingError = undefined;
@@ -396,12 +493,12 @@ export class RecordingService {
         ? entry
         : { ...entry, state: "PENDING", progress: 0, error: undefined }
     ));
-    this.projectMetadata.postProcessingStatus = this.postProcessingState;
-    this.projectMetadata.status = "SOURCE_FINALIZED";
-    this.projectMetadata.postProcessingError = null;
-    this.projectMetadata.postProcessingFailedAt = null;
-    this.projectMetadata.exports = this.exportStates;
-    this.projectMetadata.postProcessingStartedAt = new Date().toISOString();
+    projectMetadata.postProcessingStatus = this.postProcessingState;
+    projectMetadata.status = "SOURCE_FINALIZED";
+    projectMetadata.postProcessingError = null;
+    projectMetadata.postProcessingFailedAt = null;
+    projectMetadata.exports = this.exportStates;
+    projectMetadata.postProcessingStartedAt = new Date().toISOString();
     try {
       await this.writeProject();
     } catch (error) {
@@ -413,7 +510,8 @@ export class RecordingService {
   }
 
   private launchPostProcessing(result: RecordingResult): void {
-    void this.postProcess(result).catch((error: unknown) => this.handlePostProcessingFailure(error));
+    this.postProcessingPromise = this.postProcess(result)
+      .catch((error: unknown) => this.handlePostProcessingFailure(error));
   }
 
   private async handlePostProcessingFailure(error: unknown): Promise<void> {

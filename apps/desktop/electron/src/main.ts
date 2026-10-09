@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, session, systemPreferences } from "electron";
 import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
 import { registerDisplayCaptureIpc } from "./ipc/display-capture.ipc";
@@ -68,9 +68,50 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", () => {
-  recording.stopPostProcessing();
-  mediaCore.stop();
+let allowQuit = false;
+let preparingToQuit = false;
+
+app.on("before-quit", (event) => {
+  if (allowQuit) {
+    recording.stopPostProcessing();
+    mediaCore.stop();
+    return;
+  }
+
+  event.preventDefault();
+  if (preparingToQuit) {
+    return;
+  }
+  preparingToQuit = true;
+
+  void recording.finishForShutdown().then(() => {
+    allowQuit = true;
+    app.quit();
+  }).catch(async (error: unknown) => {
+    console.error("Unable to safely finish recording before quitting:", error);
+    const result = await dialog.showMessageBox({
+      type: "warning",
+      title: "Recording or export could not be finished",
+      message: "DUI Studio could not safely finalize the recording or complete both exports.",
+      detail: `${error instanceof Error ? error.message : String(error)}\n\nKeep the app open to retry or inspect the recording. Quitting anyway may leave an incomplete recording or export.`,
+      buttons: ["Keep DUI Studio Open", "Quit Anyway"],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    preparingToQuit = false;
+    if (result.response === 1) {
+      allowQuit = true;
+      app.quit();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow();
+    }
+  }).catch((error: unknown) => {
+    preparingToQuit = false;
+    console.error("Unable to show the recording shutdown warning:", error);
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow();
+    }
+  });
 });
 
 app.on("window-all-closed", () => {
