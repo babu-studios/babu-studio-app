@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, session, systemPreferences } from "electron";
+import { cpSync, existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
 import { registerMediaAccessIpc } from "./ipc/media-access.ipc";
@@ -11,6 +12,29 @@ const mediaCore = new MediaCoreService();
 const recording = new RecordingService(mediaCore);
 
 app.setName("Babu Studio");
+
+// The app was renamed from "DUI Studio"; carry saved scenes, layers and settings over once.
+function migrateLegacyUserData(): void {
+  try {
+    const current = app.getPath("userData");
+    const legacy = join(app.getPath("appData"), "DUI Studio");
+    const marker = join(current, ".migrated-from-dui-studio");
+    if (existsSync(marker) || !existsSync(legacy)) {
+      return;
+    }
+    for (const entry of ["Local Storage", "IndexedDB", "Preferences"]) {
+      const source = join(legacy, entry);
+      if (existsSync(source)) {
+        cpSync(source, join(current, entry), { recursive: true, force: true });
+      }
+    }
+    writeFileSync(marker, "migrated");
+  } catch (error) {
+    console.error("Could not migrate saved data from DUI Studio.", error);
+  }
+}
+
+migrateLegacyUserData();
 
 function getMediaCorePath(): string {
   const configuredPath = process.env.DUI_STUDIO_MEDIA_CORE_PATH;
