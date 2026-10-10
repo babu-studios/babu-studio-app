@@ -9,8 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS, type ExportResolutionId } from "@shared/constants/media.constants";
 import { Dropdown } from "./components/common/Dropdown";
 import { IconButton } from "./components/common/IconButton";
+import { ResourceMonitor } from "./components/system/ResourceMonitor";
 import type { DesktopCaptureSource } from "@shared/types/capture";
 import type { PostProcessingState, RecordingExport, RecordingMode, RecordingScene } from "@shared/types/media";
 
@@ -1261,7 +1263,7 @@ export default function App() {
   const [editingScene, setEditingScene] = useState<SceneId | null>(null);
   const [sceneNameDraft, setSceneNameDraft] = useState("");
   const [layersByScene, setLayersByScene] = useState<Record<SceneId, StudioLayer[]>>(initialStudioState.layersByScene);
-  const [selectedCanvasObject, setSelectedCanvasObject] = useState<{ sceneId: SceneId; layerId: LayerId } | null>(null);
+  const [selectedCanvasObject, setSelectedCanvasObject] = useState<{ sceneId: SceneId; layerId: LayerId; outputId: OutputId } | null>(null);
   const [settingsLayerId, setSettingsLayerId] = useState<LayerId | null>(null);
   const [desktopCaptureSources, setDesktopCaptureSources] = useState<DesktopCaptureSource[]>([]);
   const [desktopCaptureLoading, setDesktopCaptureLoading] = useState(false);
@@ -1282,6 +1284,7 @@ export default function App() {
   const [dragOverLayerId, setDragOverLayerId] = useState<LayerId | null>(null);
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>(savedAudioMixer.tracks);
   const [exportModes, setExportModes] = useState<RecordingMode[]>(["HORIZONTAL", "VERTICAL"]);
+  const [exportResolution, setExportResolution] = useState<ExportResolutionId>(DEFAULT_EXPORT_RESOLUTION);
   const [previewEnabled, setPreviewEnabled] = useState<Record<OutputId, boolean>>({
     landscape: true,
     portrait: true,
@@ -2320,6 +2323,7 @@ export default function App() {
         captureHeight: captureSize?.height,
         mode: "HORIZONTAL",
         exportModes,
+        exportResolution,
         fps: 60,
         gameVolume: gameAudioDevice
           ? audioTracks.some((track) => track.id === "capture-card") ? trackVolume("capture-card") : 1
@@ -2482,7 +2486,6 @@ export default function App() {
       ...current,
       [sceneId]: [layer, ...(current[sceneId] ?? [])],
     }));
-    setSelectedCanvasObject({ sceneId, layerId });
     setLayerMenuOpen(false);
   }
 
@@ -2658,6 +2661,7 @@ export default function App() {
           <span className="brand-name">DUI Studio</span>
         </div>
         <div className="topbar-actions">
+          <ResourceMonitor />
           <button
             className={`action-button action-button--record${recordingActive ? " action-button--recording" : ""}`}
             disabled={recordingBusy || postProcessingState === "PROCESSING"}
@@ -2750,7 +2754,7 @@ export default function App() {
             <div className="export-selection-heading">
               <div className="section-title">
                 <Icon name="export" />
-                <h3>Export/Record Layout</h3>
+                <h3>Export/Record</h3>
               </div>
               <p className="export-format-hint">Choose one or both. Your source recording is shared.</p>
             </div>
@@ -2786,6 +2790,21 @@ export default function App() {
                 );
               })}
             </div>
+            <label className="export-resolution">
+              <span>Export resolution</span>
+              <Dropdown
+                value={exportResolution}
+                aria-label="Export resolution"
+                disabled={recordingBusy || isRecordingActive || postProcessingState === "PROCESSING"}
+                onChange={(event) => setExportResolution(event.target.value as ExportResolutionId)}
+              >
+                {(Object.entries(EXPORT_RESOLUTIONS) as [ExportResolutionId, (typeof EXPORT_RESOLUTIONS)[ExportResolutionId]][]).map(([id, option]) => (
+                  <option key={id} value={id}>
+                    {option.label} ({option.horizontal.width} × {option.horizontal.height})
+                  </option>
+                ))}
+              </Dropdown>
+            </label>
           </section>
 
           <section className="inspector-section">
@@ -3439,7 +3458,11 @@ export default function App() {
           </section>
         </aside>
 
-        <section className="canvas-workspace" aria-label="Output previews">
+        <section
+          className="canvas-workspace"
+          aria-label="Output previews"
+          onPointerDown={() => setSelectedCanvasObject(null)}
+        >
           <div className="preview-grid">
             {OUTPUTS.map((output) => {
               return (
@@ -3451,12 +3474,14 @@ export default function App() {
                   previewEnabled={previewEnabled[output.id]}
                   browserCaptureStreams={browserCaptureStreams}
                   selectedLayerId={
-                    selectedCanvasObject && selectedCanvasObject.sceneId === currentScene?.id
+                    selectedCanvasObject
+                      && selectedCanvasObject.sceneId === currentScene?.id
+                      && selectedCanvasObject.outputId === output.id
                       ? selectedCanvasObject.layerId
                       : null
                   }
                   onSelectLayer={(layerId) => {
-                    setSelectedCanvasObject(currentScene ? { sceneId: currentScene.id, layerId } : null);
+                    setSelectedCanvasObject(currentScene ? { sceneId: currentScene.id, layerId, outputId: output.id } : null);
                   }}
                   onTogglePreview={() => {
                     setPreviewEnabled((current) => ({

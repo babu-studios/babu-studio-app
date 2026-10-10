@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, session, systemPreferences } from "electron
 import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
 import { registerDisplayCaptureIpc } from "./ipc/display-capture.ipc";
+import { registerSystemStatsIpc } from "./ipc/system-stats.ipc";
 import { MediaCoreService } from "./services/media-core.service";
 import { RecordingService } from "./services/recording.service";
 import { createMainWindow } from "./services/window.service";
@@ -26,6 +27,7 @@ function getMediaCorePath(): string {
 app.whenReady().then(async () => {
   registerMediaCoreIpc(mediaCore, recording);
   registerDisplayCaptureIpc();
+  registerSystemStatsIpc();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
       ? details.securityOrigin ?? webContents.getURL()

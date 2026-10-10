@@ -1,5 +1,6 @@
 import type { MediaCoreStatus, RecordingResult, StartRecordingRequest } from "./media";
 import type { DesktopCaptureSourcesResult } from "./capture";
+import type { ProcessSnapshot, SystemStats } from "./system-stats";
 
 declare global {
   interface Window {
@@ -12,6 +13,8 @@ declare global {
       getDesktopCaptureSources(): Promise<DesktopCaptureSourcesResult>;
       requestCameraAccess(): Promise<boolean>;
       requestMicrophoneAccess(): Promise<boolean>;
+      getSystemStats(): Promise<SystemStats>;
+      getProcessSnapshot(): Promise<ProcessSnapshot>;
     };
   }
 }

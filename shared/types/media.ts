@@ -60,6 +60,7 @@ export type StartRecordingRequest = {
   captureWidth?: number;
   captureHeight?: number;
   exportModes?: RecordingMode[];
+  exportResolution?: "720p" | "1080p" | "1440p" | "2160p";
   scene: RecordingScene;
 };
 

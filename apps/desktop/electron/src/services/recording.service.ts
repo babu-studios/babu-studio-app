@@ -14,14 +14,10 @@ import type {
   RecordingScene,
   StartRecordingRequest,
 } from "@shared/types/media";
+import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS } from "@shared/constants/media.constants";
 import type { MediaCoreService } from "./media-core.service";
 
 type FfmpegProcess = ChildProcessByStdio<null, null, Readable>;
-
-const CANVAS = {
-  HORIZONTAL: { width: 1920, height: 1080 },
-  VERTICAL: { width: 1080, height: 1920 },
-} as const;
 
 const CAPTURE_SIZES = {
   "720p": { width: 1280, height: 720 },
@@ -275,7 +271,11 @@ export class RecordingService {
       return failure(request, "Select at least one valid export layout.");
     }
     const exportModes = availableModes.filter((mode) => requestedModes.includes(mode));
-    const sessionRequest = { ...request, exportModes };
+    const exportResolution = request.exportResolution ?? DEFAULT_EXPORT_RESOLUTION;
+    if (!(exportResolution in EXPORT_RESOLUTIONS)) {
+      return failure(request, "Select a valid export resolution.");
+    }
+    const sessionRequest = { ...request, exportModes, exportResolution };
     if (this.active || this.startPromise) {
       return failure(sessionRequest, "A recording is already in progress.");
     }
@@ -328,13 +328,19 @@ export class RecordingService {
       this.activeExportPath = undefined;
       this.postProcessingError = undefined;
       this.finalizedResult = undefined;
+      const exportResolution = request.exportResolution ?? DEFAULT_EXPORT_RESOLUTION;
       const projectMetadata: ProjectMetadata = {
         recordingId,
         createdAt: new Date().toISOString(),
         status: "STARTING",
         recordingMode: request.mode,
         exportModes: request.exportModes,
-        canvas: { horizontal: CANVAS.HORIZONTAL, vertical: CANVAS.VERTICAL, fps: request.fps },
+        canvas: {
+          horizontal: EXPORT_RESOLUTIONS[exportResolution].horizontal,
+          vertical: EXPORT_RESOLUTIONS[exportResolution].vertical,
+          exportResolution,
+          fps: request.fps,
+        },
         sources: {
           master: "master.mkv",
           videoTracks: [],
@@ -746,10 +752,16 @@ export class RecordingService {
       return Math.max(0, Math.round(finite(track?.startOffsetMs ?? 0)));
     };
 
-    const canvas = mode === "VERTICAL" ? CANVAS.VERTICAL : CANVAS.HORIZONTAL;
+    const projectCanvas = project.canvas as {
+      exportResolution?: keyof typeof EXPORT_RESOLUTIONS;
+      fps?: number;
+    };
+    const resolution = EXPORT_RESOLUTIONS[projectCanvas.exportResolution ?? DEFAULT_EXPORT_RESOLUTION]
+      ?? EXPORT_RESOLUTIONS[DEFAULT_EXPORT_RESOLUTION];
+    const canvas = mode === "VERTICAL" ? resolution.vertical : resolution.horizontal;
     const width = canvas.width;
     const height = canvas.height;
-    const fps = Math.round(finite((project.canvas as { fps?: number }).fps ?? 60, 60));
+    const fps = Math.round(finite(projectCanvas.fps ?? 60, 60));
     const durationSeconds = Math.max(0.1, result.durationMs / 1000);
     const graph: string[] = [`color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}[base0]`];
     let currentVideo = "base0";

@@ -22,6 +22,8 @@ In both exports, microphone audio is compressed and boosted, and game audio is d
 
 Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox encoder on macOS. Post-processing invokes `ffmpeg` from `PATH`; set `DUI_STUDIO_FFMPEG_PATH` to use a specific executable. If VideoToolbox export fails, the app retries with `libx264`. Source recordings are kept if export fails.
 
+A live System Resources panel below the previews shows CPU, GPU, memory, and disk usage once per second. GPU utilization is read from macOS (`ioreg`) and shows N/A where unavailable; disk shows percent used with used and remaining space.
+
 Display-capture layers are not currently recorded by the native media core. Use a capture card or webcam layer for exported video.
 
 ## Useful commands
