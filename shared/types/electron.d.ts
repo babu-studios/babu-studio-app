@@ -1,5 +1,4 @@
 import type { MediaCoreStatus, RecordingResult, StartRecordingRequest } from "./media";
-import type { DesktopCaptureSourcesResult } from "./capture";
 import type { ProcessSnapshot, SystemStats } from "./system-stats";
 
 declare global {
@@ -9,8 +8,8 @@ declare global {
       startRecording(request: StartRecordingRequest): Promise<RecordingResult>;
       stopRecording(): Promise<RecordingResult>;
       getRecordingStatus(): Promise<RecordingResult>;
+      cancelRecordingExport(): Promise<void>;
       retryRecordingExport(): Promise<RecordingResult>;
-      getDesktopCaptureSources(): Promise<DesktopCaptureSourcesResult>;
       requestCameraAccess(): Promise<boolean>;
       requestMicrophoneAccess(): Promise<boolean>;
       getSystemStats(): Promise<SystemStats>;

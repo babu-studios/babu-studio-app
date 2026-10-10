@@ -13,7 +13,6 @@ import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS, type ExportResolutionId 
 import { Dropdown } from "./components/common/Dropdown";
 import { IconButton } from "./components/common/IconButton";
 import { ResourceMonitor } from "./components/system/ResourceMonitor";
-import type { DesktopCaptureSource } from "@shared/types/capture";
 import type { PostProcessingState, RecordingExport, RecordingMode, RecordingScene } from "@shared/types/media";
 
 type OutputId = "landscape" | "portrait";
@@ -21,7 +20,7 @@ type LayerTransforms = Record<OutputId, LayerTransform>;
 type SceneId = string;
 type SceneAppearance = "gameplay" | "just-chatting" | "starting-soon" | "custom";
 type LayerId = string;
-type LayerKind = "gameplay" | "camera" | "alerts" | "camera-device" | "display-capture" | "game-capture";
+type LayerKind = "gameplay" | "camera" | "alerts" | "camera-device" | "game-capture";
 type IconName =
   | "record"
   | "stream"
@@ -41,7 +40,8 @@ type IconName =
   | "speaker-muted"
   | "trash"
   | "export"
-  | "plus";
+  | "plus"
+  | "close";
 
 type AudioTrack = {
   id: string;
@@ -77,7 +77,7 @@ type StudioLayer = {
 type LayerTransform = { x: number; y: number; width: number; height: number };
 type CropInsets = { top: number; right: number; bottom: number; left: number };
 type SourceDimensions = { width: number; height: number };
-type CaptureResolutionId = "720p" | "1080p" | "1440p" | "2160p";
+type CaptureResolutionId = "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p";
 type CaptureResolution = {
   id: CaptureResolutionId;
   label: string;
@@ -111,23 +111,6 @@ type CanvasInteraction = {
   initialTransform: LayerTransform;
   currentTransform: LayerTransform;
 };
-type ElectronDesktopCaptureConstraints = MediaTrackConstraints & {
-  width?: { ideal: number };
-  height?: { ideal: number };
-  frameRate?: { ideal: number; max: number };
-  mandatory: {
-    chromeMediaSource: "desktop";
-    chromeMediaSourceId: string;
-    minWidth?: number;
-    maxWidth?: number;
-    minHeight?: number;
-    maxHeight?: number;
-    minFrameRate?: number;
-    maxFrameRate?: number;
-  };
-};
-const BROWSER_DISPLAY_CAPTURE_ID = "__browser-display-capture__";
-
 const OUTPUTS: { id: OutputId; name: string; ratio: string; size: string; width: number; height: number; icon: IconName }[] = [
   { id: "landscape", name: "Landscape", ratio: "16:9", size: "1920 × 1080", width: 1920, height: 1080, icon: "landscape" },
   { id: "portrait", name: "Portrait", ratio: "9:16", size: "1080 × 1920", width: 1080, height: 1920, icon: "portrait" },
@@ -155,6 +138,8 @@ function describeExportSelection(modes: RecordingMode[]): string {
 }
 
 const CAPTURE_RESOLUTIONS: CaptureResolution[] = [
+  { id: "360p", label: "SD 360p", width: 640, height: 360 },
+  { id: "480p", label: "SD 480p", width: 854, height: 480 },
   { id: "720p", label: "HD 720p", width: 1280, height: 720 },
   { id: "1080p", label: "Full HD 1080p", width: 1920, height: 1080 },
   { id: "1440p", label: "QHD 1440p", width: 2560, height: 1440 },
@@ -370,9 +355,6 @@ function getDefaultLayerTransform(kind: LayerKind): LayerTransform {
   if (kind === "camera-device") {
     return { x: 70, y: 68, width: 25, height: 25 };
   }
-  if (kind === "display-capture") {
-    return { x: 0, y: 0, width: 100, height: 100 };
-  }
   if (kind === "game-capture") {
     return { x: 20, y: 20, width: 60, height: 60 };
   }
@@ -526,7 +508,7 @@ function loadPersistedStudioState(): PersistedStudioState {
       portraitPlacementVersion: PORTRAIT_PLACEMENT_VERSION,
     };
   } catch (error) {
-    console.error("Could not load saved DUI Studio scenes and layers.", error);
+    console.error("Could not load saved Babu Studio scenes and layers.", error);
     return emptyState;
   }
 }
@@ -538,14 +520,8 @@ function savePersistedStudioState(state: PersistedStudioState): void {
       portraitPlacementVersion: PORTRAIT_PLACEMENT_VERSION,
     }));
   } catch (error) {
-    console.error("Could not save DUI Studio scenes and layers.", error);
+    console.error("Could not save Babu Studio scenes and layers.", error);
   }
-}
-
-function isElectronRenderer(): boolean {
-  return typeof window.duiStudio !== "undefined"
-    || window.location.protocol === "file:"
-    || new URLSearchParams(window.location.search).has("duiStudioElectron");
 }
 
 const LAYER_SOURCE_LABELS: Record<LayerKind, string> = {
@@ -553,7 +529,6 @@ const LAYER_SOURCE_LABELS: Record<LayerKind, string> = {
   camera: "Camera",
   alerts: "Alerts",
   "camera-device": "Camera device",
-  "display-capture": "Display capture",
   "game-capture": "Capture Card",
 };
 
@@ -605,7 +580,6 @@ const DEVICE_OPTIONS: Record<LayerKind, DeviceOption[]> = {
   camera: [],
   alerts: [{ id: "alerts-1", name: "Alerts source (sample)" }],
   "camera-device": [],
-  "display-capture": [],
   "game-capture": [],
 };
 
@@ -720,139 +694,13 @@ function Icon({ name, className = "" }: { name: IconName; className?: string }) 
       </>
     ),
     plus: <path d="M12 5v14M5 12h14" />,
+    close: <path d="M6 6l12 12M18 6L6 18" />,
   };
 
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {drawings[name]}
     </svg>
-  );
-}
-
-function DisplayCaptureVideo({
-  sourceId,
-  browserStream,
-  resolution,
-  crop,
-  onSourceDimensions,
-}: {
-  sourceId: string;
-  browserStream?: MediaStream;
-  resolution: CaptureResolution;
-  crop: CropInsets;
-  onSourceDimensions: (dimensions: SourceDimensions) => void;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [captureError, setCaptureError] = useState<string | null>(null);
-  const [videoSize, setVideoSize] = useState({ width: resolution.width, height: resolution.height });
-
-  useEffect(() => {
-    setVideoSize({ width: resolution.width, height: resolution.height });
-    if (browserStream) {
-      const dimensions = getSourceDimensions(browserStream);
-      if (dimensions) {
-        onSourceDimensions(dimensions);
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = browserStream;
-      }
-      return () => {
-        if (videoRef.current?.srcObject === browserStream) {
-          videoRef.current.srcObject = null;
-        }
-      };
-    }
-    if (!sourceId || sourceId === BROWSER_DISPLAY_CAPTURE_ID) {
-      return;
-    }
-
-    let cancelled = false;
-    let stream: MediaStream | null = null;
-    setCaptureError(null);
-
-    const constraints: ElectronDesktopCaptureConstraints = {
-      width: { ideal: resolution.width },
-      height: { ideal: resolution.height },
-      frameRate: { ideal: 60, max: 60 },
-      mandatory: {
-        chromeMediaSource: "desktop",
-        chromeMediaSourceId: sourceId,
-        minWidth: 640,
-        maxWidth: resolution.width,
-        minHeight: 480,
-        maxHeight: resolution.height,
-        minFrameRate: 30,
-        maxFrameRate: 60,
-      },
-    };
-
-    const basicConstraints: ElectronDesktopCaptureConstraints = {
-      mandatory: { chromeMediaSource: "desktop", chromeMediaSourceId: sourceId },
-    };
-
-    navigator.mediaDevices.getUserMedia({ audio: false, video: constraints }).catch((error: unknown) => {
-      console.warn("Display capture with preferred constraints failed, retrying with basic constraints:", error);
-      return navigator.mediaDevices.getUserMedia({ audio: false, video: basicConstraints });
-    }).then((captureStream) => {
-      if (cancelled) {
-        captureStream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      stream = captureStream;
-      const trackSettings = captureStream.getVideoTracks()[0]?.getSettings();
-      const dimensions = getSourceDimensions(captureStream);
-      if (dimensions) {
-        onSourceDimensions(dimensions);
-      }
-      console.info("Display capture stream settings:", {
-        requestedResolution: `${resolution.width}x${resolution.height}`,
-        width: trackSettings?.width,
-        height: trackSettings?.height,
-        frameRate: trackSettings?.frameRate,
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = captureStream;
-      }
-    }).catch((error: unknown) => {
-      console.error("Unable to start display capture:", error);
-      if (!cancelled) {
-        setCaptureError(error instanceof Error ? error.message : String(error));
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [sourceId, browserStream, resolution]);
-
-  return (
-    <>
-      <video
-        className="source-preview-video"
-        ref={videoRef}
-        autoPlay
-        muted
-        playsInline
-        style={getCroppedVideoStyle(crop, videoSize.width, videoSize.height)}
-        onLoadedMetadata={(event) => {
-          const dimensions = {
-            width: event.currentTarget.videoWidth || resolution.width,
-            height: event.currentTarget.videoHeight || resolution.height,
-          };
-          setVideoSize(dimensions);
-          onSourceDimensions(dimensions);
-        }}
-      />
-      {captureError && (
-        <span className="source-preview-label" title={captureError}>
-          Capture unavailable: {captureError}
-        </span>
-      )}
-    </>
   );
 }
 
@@ -1043,7 +891,6 @@ function OutputPreview({
   const visibleLayers = layers.filter((layer) => layer.enabled);
   const isPositionableSource = (layer: StudioLayer) => (
     layer.kind === "camera-device"
-    || layer.kind === "display-capture"
     || layer.kind === "game-capture"
   );
   const sourceLayers = visibleLayers.filter(isPositionableSource);
@@ -1150,31 +997,7 @@ function OutputPreview({
                 onPointerCancel={finishLayerInteraction}
                 onClick={(event) => event.stopPropagation()}
               >
-                {layer.kind === "display-capture"
-                  && layer.deviceId
-                  && layer.deviceId !== BROWSER_DISPLAY_CAPTURE_ID
-                  ? (
-                    <DisplayCaptureVideo
-                      sourceId={layer.deviceId}
-                      resolution={getCaptureResolution(layer.captureResolution)}
-                      crop={layer.crop}
-                      onSourceDimensions={(dimensions) => onSourceDimensionsChange(layer.id, dimensions)}
-                    />
-                  )
-                  : layer.kind === "display-capture"
-                    && layer.deviceId === BROWSER_DISPLAY_CAPTURE_ID
-                    && browserCaptureStreams[layer.id]
-                    ? (
-                      <DisplayCaptureVideo
-                        sourceId={BROWSER_DISPLAY_CAPTURE_ID}
-                        browserStream={browserCaptureStreams[layer.id]}
-                        resolution={getCaptureResolution(layer.captureResolution)}
-                        crop={layer.crop}
-                        onSourceDimensions={(dimensions) => onSourceDimensionsChange(layer.id, dimensions)}
-                      />
-                    )
-                  : (layer.kind === "camera-device" || layer.kind === "game-capture")
-                    && layer.deviceId
+                {(layer.kind === "camera-device" || layer.kind === "game-capture")                    && layer.deviceId
                     && browserCaptureStreams[layer.id]
                     ? (
                       <MediaStreamVideo
@@ -1186,11 +1009,9 @@ function OutputPreview({
                     )
                   : (
                     <span className="source-preview-label">
-                      {layer.deviceId === BROWSER_DISPLAY_CAPTURE_ID
-                        ? "Select display again to resume capture"
-                        : layer.deviceId
-                          ? "Reconnect video input in settings"
-                          : "No device selected"}
+                      {layer.deviceId
+                        ? "Reconnect video input in settings"
+                        : "No device selected"}
                     </span>
                   )}
               </span>
@@ -1246,7 +1067,7 @@ function OutputPreview({
         )}
       </span>
       <span className="preview-card-footer">
-        <span>{output.size}</span>
+        <span />
         <span className={`preview-state${previewEnabled ? "" : " preview-state--paused"}`}>
           <span className={`preview-live-dot${previewEnabled ? "" : " preview-live-dot--paused"}`} />
           {previewEnabled ? "PREVIEW" : "PAUSED"}
@@ -1265,10 +1086,6 @@ export default function App() {
   const [layersByScene, setLayersByScene] = useState<Record<SceneId, StudioLayer[]>>(initialStudioState.layersByScene);
   const [selectedCanvasObject, setSelectedCanvasObject] = useState<{ sceneId: SceneId; layerId: LayerId; outputId: OutputId } | null>(null);
   const [settingsLayerId, setSettingsLayerId] = useState<LayerId | null>(null);
-  const [desktopCaptureSources, setDesktopCaptureSources] = useState<DesktopCaptureSource[]>([]);
-  const [desktopCaptureLoading, setDesktopCaptureLoading] = useState(false);
-  const [desktopCaptureError, setDesktopCaptureError] = useState<string | null>(null);
-  const [browserPickerAvailable, setBrowserPickerAvailable] = useState(false);
   const [browserCaptureStreams, setBrowserCaptureStreams] = useState<Record<LayerId, MediaStream>>({});
   const [videoInputDevices, setVideoInputDevices] = useState<DeviceOption[]>([]);
   const [videoInputLoading, setVideoInputLoading] = useState(false);
@@ -1293,10 +1110,12 @@ export default function App() {
   const [recordingBusy, setRecordingBusy] = useState(false);
   const [recordingNotice, setRecordingNotice] = useState<{ error: boolean; text: string } | null>(null);
   const [recordingErrorToast, setRecordingErrorToast] = useState<string | null>(null);
+  const [infoToast, setInfoToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
   const [postProcessingState, setPostProcessingState] = useState<PostProcessingState>("NOT_STARTED");
   const [recordingExports, setRecordingExports] = useState<RecordingExport[]>([]);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const exportCancelRequestedRef = useRef(false);
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActionInFlightRef = useRef(false);
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
@@ -1478,7 +1297,7 @@ export default function App() {
         console.error("Unable to monitor audio input:", error);
         setAudioInputError(
           error instanceof DOMException && error.name === "NotAllowedError"
-            ? "Microphone permission was denied. Allow DUI Studio under System Settings > Privacy & Security > Microphone, then reopen these settings."
+            ? "Microphone permission was denied. Allow Babu Studio under System Settings > Privacy & Security > Microphone, then reopen these settings."
             : error instanceof Error ? error.message : String(error),
         );
       }
@@ -1580,95 +1399,6 @@ export default function App() {
     const layer = settingsLayerId
       ? Object.values(layersByScene).flat().find((candidate) => candidate.id === settingsLayerId)
       : null;
-    if (layer?.kind !== "display-capture") {
-      return;
-    }
-
-    let cancelled = false;
-    setDesktopCaptureLoading(true);
-    setDesktopCaptureError(null);
-    if (typeof window.duiStudio?.getDesktopCaptureSources !== "function") {
-      const isElectron = isElectronRenderer();
-      setDesktopCaptureSources([]);
-      setBrowserPickerAvailable(!isElectron);
-      if (isElectron) {
-        setDesktopCaptureError("Display capture bridge is unavailable. Restart DUI Studio to reload its Electron preload.");
-      }
-      setDesktopCaptureLoading(false);
-      return;
-    }
-
-    setBrowserPickerAvailable(false);
-    window.duiStudio.getDesktopCaptureSources().then((result) => {
-      if (!cancelled) {
-        setDesktopCaptureSources(result.sources);
-        setBrowserPickerAvailable(false);
-        if (result.error) {
-          setDesktopCaptureError(
-            result.permissionStatus !== "granted" && result.permissionStatus !== "unknown"
-              ? `Screen Recording permission is "${result.permissionStatus}". Enable Electron in System Settings → Privacy & Security → Screen Recording, then restart. Details: ${result.error}`
-              : `Electron could not enumerate display sources (permission status: ${result.permissionStatus}). Details: ${result.error}`,
-          );
-        } else         if (!result.sources.some((source) => source.name === "Entire Screen")) {
-          setDesktopCaptureError(
-            result.permissionStatus === "granted"
-              ? "No screen source was found. Restart DUI Studio and try again."
-              : "Allow Screen Recording for DUI Studio in System Settings, then restart the app.",
-          );
-        }
-        if (result.sources.some((source) => source.name === "Entire Screen")) {
-          setDesktopCaptureError(null);
-          const sourceIds = new Set(
-            result.sources
-              .filter((source) => source.name === "Entire Screen")
-              .map((source) => source.id),
-          );
-          setLayersByScene((current) => {
-            let changed = false;
-            const next = { ...current };
-            for (const [sceneId, layers] of Object.entries(current)) {
-              next[sceneId] = layers.map((candidate) => {
-                if (
-                  candidate.kind === "display-capture"
-                  && candidate.deviceId
-                  && !sourceIds.has(candidate.deviceId)
-                ) {
-                  changed = true;
-                  return { ...candidate, deviceId: "" };
-                }
-                return candidate;
-              });
-            }
-            return changed ? next : current;
-          });
-        }
-      }
-    }).catch((error: unknown) => {
-      console.error("Unable to list display capture sources:", error);
-      if (!cancelled) {
-        setBrowserPickerAvailable(!isElectronRenderer());
-        const message = error instanceof Error ? error.message : String(error);
-        setDesktopCaptureError(
-          message.includes("No handler registered")
-            ? "Display capture support isn't loaded. Stop and restart the Electron dev process."
-            : message,
-        );
-      }
-    }).finally(() => {
-      if (!cancelled) {
-        setDesktopCaptureLoading(false);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [settingsLayerId]);
-
-  useEffect(() => {
-    const layer = settingsLayerId
-      ? Object.values(layersByScene).flat().find((candidate) => candidate.id === settingsLayerId)
-      : null;
     if (layer?.kind !== "camera-device" && layer?.kind !== "game-capture") {
       return;
     }
@@ -1684,7 +1414,7 @@ export default function App() {
         if (typeof window.duiStudio?.requestCameraAccess === "function") {
           const granted = await window.duiStudio.requestCameraAccess();
           if (!granted) {
-            throw new Error("Camera permission was denied. Enable camera access in System Settings and restart DUI Studio.");
+            throw new Error("Camera permission was denied. Enable camera access in System Settings and restart Babu Studio.");
           }
         }
         const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
@@ -1956,53 +1686,6 @@ export default function App() {
     });
   }
 
-  function changeDisplayCaptureDevice(
-    sceneId: SceneId,
-    layerId: LayerId,
-    deviceId: string,
-    captureResolution: CaptureResolutionId,
-  ): void {
-    setDesktopCaptureError(null);
-    if (deviceId === BROWSER_DISPLAY_CAPTURE_ID) {
-      if (!navigator.mediaDevices?.getDisplayMedia) {
-        setDesktopCaptureError("This browser does not support display capture.");
-        return;
-      }
-      const resolution = getCaptureResolution(captureResolution);
-      void navigator.mediaDevices.getDisplayMedia({
-        audio: false,
-        video: {
-          width: { ideal: resolution.width },
-          height: { ideal: resolution.height },
-        },
-      }).then((stream) => {
-        setBrowserCaptureStream(layerId, stream);
-        updateLayer(sceneId, layerId, {
-          deviceId: BROWSER_DISPLAY_CAPTURE_ID,
-          captureResolution,
-          sourceDimensions: getSourceDimensions(stream),
-          transforms: createLayerTransforms({ x: 0, y: 0, width: 100, height: 100 }),
-        });
-        stream.getVideoTracks()[0]?.addEventListener("ended", () => {
-          setBrowserCaptureStream(layerId, null);
-          updateLayer(sceneId, layerId, { deviceId: "" });
-        }, { once: true });
-      }).catch((error: unknown) => {
-        console.error("Unable to start browser display capture:", error);
-        setDesktopCaptureError(error instanceof Error ? error.message : String(error));
-      });
-      return;
-    }
-
-    setBrowserCaptureStream(layerId, null);
-    updateLayer(sceneId, layerId, {
-      deviceId,
-      captureResolution,
-      sourceDimensions: null,
-      transforms: createLayerTransforms({ x: 0, y: 0, width: 100, height: 100 }),
-    });
-  }
-
   async function changeVideoInputDevice(
     sceneId: SceneId,
     layerId: LayerId,
@@ -2076,7 +1759,7 @@ export default function App() {
         if (typeof window.duiStudio?.requestCameraAccess === "function") {
           const granted = await window.duiStudio.requestCameraAccess();
           if (!granted) {
-            throw new Error("Camera permission was denied. Enable camera access in System Settings and restart DUI Studio.");
+            throw new Error("Camera permission was denied. Enable camera access in System Settings and restart Babu Studio.");
           }
         }
         const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
@@ -2098,11 +1781,6 @@ export default function App() {
           }
         }
       }
-      for (const layer of reconnectable) {
-        if (layer.kind === "display-capture" && layer.deviceId === BROWSER_DISPLAY_CAPTURE_ID) {
-          changeDisplayCaptureDevice(currentScene.id, layer.id, layer.deviceId, layer.captureResolution);
-        }
-      }
     } catch (error) {
       console.error("Unable to reload layers:", error);
       setVideoInputError(error instanceof Error ? error.message : String(error));
@@ -2112,6 +1790,7 @@ export default function App() {
   }
 
   const isRecordingActive = recordingActive;
+  const showAudioInputLoading = audioInputLoading && !isRecordingActive;
   const activeExport = recordingExports.find((entry) => entry.state === "PROCESSING");
   const exportsCompleted = postProcessingState === "COMPLETED";
   const overallExportProgress = exportsCompleted
@@ -2126,6 +1805,14 @@ export default function App() {
         return total + progress;
       }, 0) / recordingExports.length)
       : 0;
+  useEffect(() => {
+    if (!infoToast) {
+      return;
+    }
+    const timer = window.setTimeout(() => setInfoToast(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [infoToast]);
+
   useEffect(() => {
     if (!recordingNotice?.error) {
       setRecordingErrorToast(null);
@@ -2154,8 +1841,11 @@ export default function App() {
         }
         if (status.postProcessingState) {
           setPostProcessingState(status.postProcessingState);
-          if (status.postProcessingState === "PROCESSING") {
+          if (status.postProcessingState === "PROCESSING" && !exportCancelRequestedRef.current) {
             setExportDialogOpen(true);
+          }
+          if (status.postProcessingState !== "PROCESSING") {
+            exportCancelRequestedRef.current = false;
           }
           if (status.exports) {
             setRecordingExports(status.exports);
@@ -2176,10 +1866,15 @@ export default function App() {
                 : `Selected layout exports saved: ${formatRecordingExports(status.exports)}`,
             });
           } else if (status.postProcessingState === "ERROR") {
-            setRecordingNotice({
-              error: true,
-              text: `Export failed. The source recording was preserved. ${status.error ?? ""} ${formatRecordingExports(status.exports)}`.trim(),
-            });
+            if (status.error?.includes("Export cancelled")) {
+              setRecordingNotice(null);
+              setInfoToast({ text: "Export cancelled. The source recording and project file were kept.", tone: "success" });
+            } else {
+              setRecordingNotice({
+                error: true,
+                text: `Export failed. The source recording was preserved. ${status.error ?? ""} ${formatRecordingExports(status.exports)}`.trim(),
+              });
+            }
           }
         }
         if (status.state === "ERROR" && isRecordingActive) {
@@ -2229,10 +1924,6 @@ export default function App() {
     const enabledLayers = currentLayers.filter((layer) => layer.enabled);
     if (!currentScene) {
       setRecordingNotice({ error: true, text: "Create or select a shared scene before starting a recording." });
-      return;
-    }
-    if (enabledLayers.some((layer) => layer.kind === "display-capture")) {
-      setRecordingNotice({ error: true, text: "Display capture is not supported by the native recording pipeline yet. Disable it or use a capture card." });
       return;
     }
     const sourceLayers = enabledLayers.filter((layer) => layer.kind === "game-capture" || layer.kind === "camera-device");
@@ -2350,6 +2041,7 @@ export default function App() {
     if (recordingActionInFlightRef.current || recordingBusy || !isRecordingActive) {
       return;
     }
+    exportCancelRequestedRef.current = false;
     const startedAt = recordingStartedAtRef.current;
     if (startedAt !== null) {
       setRecordingElapsedMs(performance.now() - startedAt);
@@ -2421,33 +2113,6 @@ export default function App() {
     captureResolution: CaptureResolutionId,
   ): Promise<void> {
     const resolution = getCaptureResolution(captureResolution);
-    if (layer.kind === "display-capture") {
-      setDesktopCaptureError(null);
-      const stream = browserCaptureStreamsRef.current[layer.id];
-      const track = stream?.getVideoTracks()[0];
-      if (layer.deviceId === BROWSER_DISPLAY_CAPTURE_ID && stream && !track) {
-        setDesktopCaptureError("The selected display stream has no video track.");
-        return;
-      }
-      if (layer.deviceId === BROWSER_DISPLAY_CAPTURE_ID && track) {
-        try {
-          await track.applyConstraints({
-            width: { ideal: resolution.width },
-            height: { ideal: resolution.height },
-          });
-        } catch (error) {
-          console.error("Unable to change display capture resolution:", error);
-          setDesktopCaptureError(error instanceof Error ? error.message : String(error));
-          return;
-        }
-      }
-      updateLayer(sceneId, layer.id, {
-        captureResolution,
-        sourceDimensions: stream && track ? getSourceDimensions(stream) : null,
-      });
-      return;
-    }
-
     if (layer.kind === "camera-device" || layer.kind === "game-capture") {
       if (layer.deviceId) {
         await changeVideoInputDevice(sceneId, layer.id, layer.kind, layer.deviceId, captureResolution);
@@ -2593,7 +2258,7 @@ export default function App() {
     if (typeof window.duiStudio?.requestMicrophoneAccess === "function") {
       const granted = await window.duiStudio.requestMicrophoneAccess();
       if (!granted) {
-        throw new Error("Microphone permission was denied. Allow DUI Studio under System Settings > Privacy & Security > Microphone, then reopen these settings.");
+        throw new Error("Microphone permission was denied. Allow Babu Studio under System Settings > Privacy & Security > Microphone, then reopen these settings.");
       }
     }
     const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -2645,7 +2310,7 @@ export default function App() {
       const message = error instanceof Error ? error.message : String(error);
       setAudioInputError(
         error instanceof DOMException && error.name === "NotAllowedError"
-          ? "Microphone permission was denied. Allow DUI Studio under System Settings > Privacy & Security > Microphone, then reopen these settings."
+          ? "Microphone permission was denied. Allow Babu Studio under System Settings > Privacy & Security > Microphone, then reopen these settings."
           : message,
       );
       setAudioInputDevices([]);
@@ -2658,7 +2323,46 @@ export default function App() {
     <main className="studio-app">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-name">DUI Studio</span>
+          <svg className="brand-logo" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="16" cy="12" r="4.6" />
+            <path d="M9.6 12.5a6.4 6.4 0 0 1 12.8 0" />
+            <rect x="7.6" y="11.6" width="3" height="5.2" rx="1.3" fill="currentColor" />
+            <rect x="21.4" y="11.6" width="3" height="5.2" rx="1.3" fill="currentColor" />
+            <path d="M6 30c.4-4.6 4.2-7.4 10-7.4S25.6 25.4 26 30" />
+            <path d="M11.2 24.8h9.6a2.4 2.4 0 0 1 2.3 3l-.3 1.2a1.4 1.4 0 0 1-2.5.4l-.8-1.2h-6l-.8 1.2a1.4 1.4 0 0 1-2.5-.4l-.3-1.2a2.4 2.4 0 0 1 2.3-3z" fill="#17191d" />
+            <path d="M12.4 26.4v1.8M11.5 27.3h1.8" />
+            <circle cx="19.4" cy="26.6" r=".5" fill="currentColor" />
+            <circle cx="20.9" cy="27.7" r=".5" fill="currentColor" />
+          </svg>
+          <div className="brand-text">
+            <span className="brand-name">Babu Studio</span>
+            <span className="brand-credit">
+              <svg
+                className="brand-credit-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M7 7h10a4.5 4.5 0 0 1 4.4 5.4l-.8 4A2.6 2.6 0 0 1 15.9 17l-1.2-1.6H9.3L8.1 17a2.6 2.6 0 0 1-4.7-.6l-.8-4A4.5 4.5 0 0 1 7 7z" />
+                <path d="M8 10v3M6.5 11.5h3" />
+                <circle cx="15.5" cy="10.6" r=".6" fill="currentColor" />
+                <circle cx="17.5" cy="12.6" r=".6" fill="currentColor" />
+              </svg>
+              developed by{" "}
+              <a
+                className="brand-credit-link"
+                href="https://www.instagram.com/b4babugaming/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                @b4babugaming
+              </a>
+            </span>
+                  </div>
         </div>
         <div className="topbar-actions">
           <ResourceMonitor />
@@ -2702,6 +2406,19 @@ export default function App() {
         </div>
       </header>
 
+      {infoToast && (
+        <div className={`info-toast info-toast--${infoToast.tone}`} role="status">
+          <span>{infoToast.text}</span>
+          <button
+            type="button"
+            aria-label="Dismiss message"
+            onClick={() => setInfoToast(null)}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+      )}
+
       {recordingErrorToast && (
         <div className="recording-error-toast" role="alert">
           <span className="recording-error-toast-icon" aria-hidden="true">!</span>
@@ -2742,7 +2459,7 @@ export default function App() {
                 className="section-reload-button"
                 title="Reload all: reconnect the saved layer inputs and restart the audio mixer"
                 aria-label="Reload layers and audio mixer"
-                disabled={layersReloading}
+                disabled={layersReloading || isRecordingActive}
                 onClick={reloadAll}
               >
                 <Icon name="reload" />
@@ -2791,16 +2508,16 @@ export default function App() {
               })}
             </div>
             <label className="export-resolution">
-              <span>Export resolution</span>
+              <span>Export quality</span>
               <Dropdown
                 value={exportResolution}
-                aria-label="Export resolution"
+                aria-label="Export quality"
                 disabled={recordingBusy || isRecordingActive || postProcessingState === "PROCESSING"}
                 onChange={(event) => setExportResolution(event.target.value as ExportResolutionId)}
               >
                 {(Object.entries(EXPORT_RESOLUTIONS) as [ExportResolutionId, (typeof EXPORT_RESOLUTIONS)[ExportResolutionId]][]).map(([id, option]) => (
                   <option key={id} value={id}>
-                    {option.label} ({option.horizontal.width} × {option.horizontal.height})
+                    {option.label}
                   </option>
                 ))}
               </Dropdown>
@@ -2815,6 +2532,7 @@ export default function App() {
                 className="text-icon-button"
                 title="Add scene"
                 aria-label="Add scene"
+                disabled={isRecordingActive}
                 onClick={addScene}
               >
                 <Icon name="plus" />
@@ -2851,6 +2569,7 @@ export default function App() {
                     ) : (
                       <button
                         className="scene-row"
+                        disabled={isRecordingActive}
                         onClick={() => selectScene(scene.id)}
                         onDoubleClick={() => startSceneRename(scene)}
                         onKeyDown={(event) => {
@@ -2870,6 +2589,7 @@ export default function App() {
                       className="delete-scene-button"
                       title={`Delete ${scene.name}`}
                       aria-label={`Delete scene ${scene.name}`}
+                      disabled={isRecordingActive}
                       onClick={() => deleteScene(scene.id)}
                     >
                       <Icon name="trash" />
@@ -2894,7 +2614,7 @@ export default function App() {
                   aria-label="Add layer"
                   aria-haspopup="menu"
                   aria-expanded={layerMenuOpen}
-                  disabled={!currentScene}
+                  disabled={!currentScene || isRecordingActive}
                   ref={layerMenuButtonRef}
                   onClick={() => setLayerMenuOpen((open) => !open)}
                 >
@@ -2936,9 +2656,7 @@ export default function App() {
             <div className="layer-list">
               {currentScene ? currentLayers.map((layer) => {
                 const enabled = layer.enabled;
-                const deviceListLoading = layer.kind === "display-capture"
-                  ? desktopCaptureLoading
-                  : (layer.kind === "camera-device" || layer.kind === "game-capture") && videoInputLoading;
+                const deviceListLoading = (layer.kind === "camera-device" || layer.kind === "game-capture") && videoInputLoading && !isRecordingActive;
                 const settingsOpen = settingsLayerId === layer.id;
                 const dragged = draggedLayerId === layer.id;
                 const dragTarget = dragOverLayerId === layer.id;
@@ -2972,7 +2690,7 @@ export default function App() {
                     >
                       <div
                         className={`layer-row${enabled ? "" : " layer-row--muted"}`}
-                        draggable
+                        draggable={!isRecordingActive}
                         title="Drag to reorder layers. Top layers appear in front."
                         onDragStart={(event) => {
                           event.dataTransfer.effectAllowed = "move";
@@ -2989,6 +2707,7 @@ export default function App() {
                       </div>
                       <IconButton
                         tone={enabled ? "default" : "alert"}
+                        disabled={isRecordingActive}
                         onClick={() => toggleLayer(layer.id)}
                         role="switch"
                         aria-label={layer.name}
@@ -3004,6 +2723,7 @@ export default function App() {
                         aria-label={`Settings for ${layer.name}`}
                         aria-haspopup="dialog"
                         aria-expanded={settingsOpen}
+                        disabled={isRecordingActive}
                         onClick={(event) => {
                           if (settingsOpen) {
                             setSettingsLayerId(null);
@@ -3019,6 +2739,7 @@ export default function App() {
                         tone="danger"
                         title={`Delete ${layer.name}`}
                         aria-label={`Delete layer ${layer.name}`}
+                        disabled={isRecordingActive}
                         onClick={() => deleteLayer(layer.id)}
                       >
                         <Icon name="trash" />
@@ -3056,18 +2777,12 @@ export default function App() {
                             <span>Device</span>
                             <Dropdown
                               loading={deviceListLoading}
+                              disabled={isRecordingActive}
                               loadingLabel="Loading device list"
                               value={deviceListLoading ? "" : layer.deviceId}
                               aria-label={`Device for ${layer.name}`}
                               onChange={(event) => {
-                                if (layer.kind === "display-capture") {
-                                  changeDisplayCaptureDevice(
-                                    currentScene.id,
-                                    layer.id,
-                                    event.target.value,
-                                    layer.captureResolution,
-                                  );
-                                } else if (
+                                if (
                                   layer.kind === "camera-device"
                                   || layer.kind === "game-capture"
                                 ) {
@@ -3092,26 +2807,9 @@ export default function App() {
                                     : videoInputDevices.length
                                       ? "Select a video input"
                                       : "No video inputs found"
-                                  : layer.kind === "display-capture"
-                                  ? desktopCaptureLoading
-                                    ? "Device"
-                                    : desktopCaptureSources.length
-                                      ? "Select a display or window"
-                                      : browserPickerAvailable
-                                        ? "Select a source"
-                                        : "No display sources found"
                                   : "Select a device"}
                               </option>
-                              {layer.kind === "display-capture"
-                                ? desktopCaptureSources.map((source) => (
-                                  <option
-                                    key={source.id}
-                                    value={source.id}
-                                  >
-                                    {source.name}
-                                  </option>
-                                ))
-                                : (layer.kind === "camera-device" || layer.kind === "game-capture")
+                              {(layer.kind === "camera-device" || layer.kind === "game-capture")
                                   ? videoInputDevices.map((device) => (
                                     <option
                                       key={device.id}
@@ -3123,31 +2821,15 @@ export default function App() {
                                 : DEVICE_OPTIONS[layer.kind].map((device) => (
                                   <option key={device.id} value={device.id}>{device.name}</option>
                                 ))}
-                              {layer.kind === "display-capture" && browserPickerAvailable && (
-                                <option value={BROWSER_DISPLAY_CAPTURE_ID}>Choose a display or window...</option>
-                              )}
-                              {layer.kind === "display-capture"
-                                && layer.deviceId === BROWSER_DISPLAY_CAPTURE_ID
-                                && !browserPickerAvailable
-                                && (
-                                  <option value={BROWSER_DISPLAY_CAPTURE_ID}>Re-select browser display...</option>
-                                )}
-                              {layer.kind === "display-capture"
-                                && layer.deviceId
-                                && layer.deviceId !== BROWSER_DISPLAY_CAPTURE_ID
-                                && !desktopCaptureSources.some((source) => source.id === layer.deviceId)
-                                && (
-                                  <option value={layer.deviceId}>Previously selected source unavailable</option>
-                                )}
                             </Dropdown>
                           </label>
                           {(layer.kind === "camera-device"
-                            || layer.kind === "display-capture"
                             || layer.kind === "game-capture") && (
                             <label className="layer-device-select">
-                                <span>Resolution</span>
+                                <span>Resolution (Preview &amp; Record)</span>
                                 <Dropdown
                                   value={layer.captureResolution}
+                                  disabled={isRecordingActive}
                                   aria-label={`Resolution for ${layer.name}`}
                                   onChange={(event) => {
                                     if (isCaptureResolutionId(event.target.value)) {
@@ -3165,13 +2847,9 @@ export default function App() {
                                     </option>
                                   ))}
                                 </Dropdown>
-                                <span className="layer-resolution-hint">
-                                  Requests this capture size without changing either layout's placement.
-                                </span>
                             </label>
                           )}
                           {(layer.kind === "camera-device"
-                            || layer.kind === "display-capture"
                             || layer.kind === "game-capture") && (
                             <div className="layer-crop-controls" role="group" aria-label={`Crop ${layer.name} in pixels`}>
                                 <span className="layer-crop-title">Crop (source pixels)</span>
@@ -3222,11 +2900,6 @@ export default function App() {
                                 {videoInputError}
                               </span>
                             )}
-                          {layer.kind === "display-capture" && desktopCaptureError && (
-                            <span className="layer-device-error" role="alert">
-                              {desktopCaptureError}
-                            </span>
-                          )}
                         </div>,
                         document.body,
                         layer.id,
@@ -3253,6 +2926,7 @@ export default function App() {
                   aria-expanded={audioAddMenuOpen}
                   type="button"
                   ref={audioAddMenuButtonRef}
+                  disabled={isRecordingActive}
                   onClick={() => setAudioAddMenuOpen((open) => !open)}
                 >
                   <Icon name="plus" />
@@ -3310,6 +2984,7 @@ export default function App() {
                     <div className="audio-track-actions" ref={track.id === audioSettingsTrackId ? audioSettingsRef : undefined}>
                       <IconButton
                         active={trackSettingsOpen}
+                        disabled={isRecordingActive}
                         onClick={() => void toggleAudioSettings(track.id)}
                         ref={track.id === audioSettingsTrackId ? audioSettingsButtonRef : undefined}
                         title={`${track.name} settings`}
@@ -3321,6 +2996,7 @@ export default function App() {
                       </IconButton>
                       <IconButton
                         tone={track.muted ? "alert" : "default"}
+                        disabled={isRecordingActive}
                         onClick={() => updateAudioTrack(track.id, { muted: !track.muted })}
                         aria-label={`${track.muted ? "Unmute" : "Mute"} ${track.name}`}
                         aria-pressed={track.muted}
@@ -3332,6 +3008,7 @@ export default function App() {
                           tone="danger"
                           title={`Remove ${track.name}`}
                           aria-label={`Remove ${track.name}`}
+                          disabled={isRecordingActive}
                           onClick={() => removeAudioTrack(track.id)}
                         >
                           <Icon name="trash" />
@@ -3355,9 +3032,9 @@ export default function App() {
                       <label className="audio-device-select">
                         <span>Input device</span>
                         <Dropdown
-                            loading={audioInputLoading}
+                            loading={showAudioInputLoading}
                             loadingLabel="Loading microphone inputs"
-                            value={audioInputLoading ? "" : trackInputId}
+                            value={showAudioInputLoading ? "" : trackInputId}
                             onChange={(event) => {
                               if (track.id === "mic") {
                                 setSelectedAudioInputId(event.target.value);
@@ -3366,10 +3043,10 @@ export default function App() {
                                 setAudioTrackInputIds((ids) => ({ ...ids, [track.id]: value }));
                               }
                             }}
-                            disabled={audioInputDevices.length === 0}
+                            disabled={isRecordingActive || audioInputDevices.length === 0}
                             aria-label={`${track.name} input device`}
                           >
-                            {audioInputLoading ? (
+                            {showAudioInputLoading ? (
                               <option value="">Select input device</option>
                             ) : (
                               <>
@@ -3389,16 +3066,17 @@ export default function App() {
                         <label className="audio-device-select">
                           <span>Output device</span>
                           <Dropdown
-                            loading={audioInputLoading}
+                            loading={showAudioInputLoading}
+                            disabled={isRecordingActive}
                             loadingLabel="Loading output devices"
-                            value={audioInputLoading ? "" : audioTrackOutputIds[track.id] ?? ""}
+                            value={showAudioInputLoading ? "" : audioTrackOutputIds[track.id] ?? ""}
                             onChange={(event) => {
                               const value = event.target.value;
                               setAudioTrackOutputIds((ids) => ({ ...ids, [track.id]: value }));
                             }}
                             aria-label={`${track.name} output device`}
                           >
-                            {audioInputLoading ? (
+                            {showAudioInputLoading ? (
                               <option value="">Select output device</option>
                             ) : (
                               <>
@@ -3443,6 +3121,7 @@ export default function App() {
                       min="0"
                       max="100"
                       value={track.volume}
+                      disabled={isRecordingActive}
                       aria-label={`${track.name} volume`}
                       onChange={(event) => updateAudioTrack(track.id, { volume: Number(event.target.value) })}
                       style={{
@@ -3515,6 +3194,30 @@ export default function App() {
             aria-describedby="export-progress-description"
           >
             <div className="export-progress-heading">
+              {!exportsCompleted && (
+                <button
+                  className="export-progress-cancel"
+                  type="button"
+                  title="Cancel export (keeps the source recording and project file)"
+                  aria-label="Cancel export"
+                  onClick={() => {
+                    exportCancelRequestedRef.current = true;
+                    setExportDialogOpen(false);
+                    const failCancel = () => {
+                      exportCancelRequestedRef.current = false;
+                      setExportDialogOpen(true);
+                      setRecordingNotice({ error: true, text: "Cancel is unavailable in this running session. Restart Babu Studio to load the latest version." });
+                    };
+                    if (typeof window.duiStudio.cancelRecordingExport !== "function") {
+                      failCancel();
+                      return;
+                    }
+                    void window.duiStudio.cancelRecordingExport().catch(failCancel);
+                  }}
+                >
+                  <Icon name="close" />
+                </button>
+              )}
               <div>
                 <span className="export-progress-kicker">
                   {exportsCompleted ? "EXPORT COMPLETE" : "POST-PROCESSING"}
@@ -3574,7 +3277,7 @@ export default function App() {
                       </span>
                       <span className="export-progress-output-copy">
                         <strong>{output.name}</strong>
-                        <small>{output.size} · MP4</small>
+                        <small>MP4</small>
                       </span>
                       <span className={`export-progress-badge export-progress-badge--${stateClass}`}>
                         {status}

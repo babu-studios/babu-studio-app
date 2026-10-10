@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-The development command compiles `creator-media-core` into `core/build/bin/` and then starts the DUI Studio Electron/Vite development server. The Electron main process launches this executable as a child process. The React renderer only accesses it through the typed preload bridge and Electron IPC.
+The development command compiles `creator-media-core` into `core/build/bin/` and then starts the Babu Studio Electron/Vite development server. The Electron main process launches this executable as a child process. The React renderer only accesses it through the typed preload bridge and Electron IPC.
 
 ## Validation and packaging
 

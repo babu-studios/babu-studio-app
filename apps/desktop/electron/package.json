@@ -2,7 +2,7 @@
   "name": "@dui-studio/electron",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron desktop shell for DUI Studio.",
+  "description": "Electron desktop shell for Babu Studio.",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "studio.dui.app",
-    "productName": "DUI Studio",
+    "productName": "Babu Studio",
     "directories": {
       "output": "../../../release"
     },
@@ -38,8 +38,8 @@
     "mac": {
       "category": "public.app-category.video",
       "extendInfo": {
-        "NSCameraUsageDescription": "DUI Studio uses camera access to show connected cameras and capture cards in your scene preview.",
-        "NSMicrophoneUsageDescription": "DUI Studio uses microphone access to list and capture your selected audio input."
+        "NSCameraUsageDescription": "Babu Studio uses camera access to show connected cameras and capture cards in your scene preview.",
+        "NSMicrophoneUsageDescription": "Babu Studio uses microphone access to list and capture your selected audio input."
       }
     }
   }

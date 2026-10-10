@@ -14,17 +14,18 @@ export function Dropdown({
   children,
   ...selectProps
 }: DropdownProps) {
+  const showLoading = loading && !disabled;
   return (
-    <div className={`dropdown${loading ? " dropdown--loading" : ""}`}>
+    <div className={`dropdown${showLoading ? " dropdown--loading" : ""}`}>
       <select
         {...selectProps}
         className={`dropdown-select ${className}`.trim()}
-        disabled={disabled || loading}
-        aria-busy={loading}
+        disabled={disabled || showLoading}
+        aria-busy={showLoading}
       >
         {children}
       </select>
-      {loading && <span className="dropdown-loader" role="status" aria-label={loadingLabel} />}
+      {showLoading && <span className="dropdown-loader" role="status" aria-label={loadingLabel} />}
     </div>
   );
 }

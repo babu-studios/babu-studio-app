@@ -9,4 +9,5 @@ export function registerMediaCoreIpc(mediaCore: MediaCoreService, recording: Rec
   ipcMain.handle("recording:stop", () => recording.stop());
   ipcMain.handle("recording:status", () => recording.getStatus());
   ipcMain.handle("recording:retry-export", () => recording.retryPostProcessing());
+  ipcMain.handle("recording:cancel-export", () => recording.cancelPostProcessing());
 }

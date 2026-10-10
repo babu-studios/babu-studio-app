@@ -20,6 +20,8 @@ import type { MediaCoreService } from "./media-core.service";
 type FfmpegProcess = ChildProcessByStdio<null, null, Readable>;
 
 const CAPTURE_SIZES = {
+  "360p": { width: 640, height: 360 },
+  "480p": { width: 854, height: 480 },
   "720p": { width: 1280, height: 720 },
   "1080p": { width: 1920, height: 1080 },
   "1440p": { width: 2560, height: 1440 },
@@ -107,6 +109,8 @@ function getSourceDimensions(layer: RecordingLayer): { width: number; height: nu
     return layer.sourceDimensions;
   }
   switch (layer.captureResolution) {
+    case "360p": return CAPTURE_SIZES["360p"];
+    case "480p": return CAPTURE_SIZES["480p"];
     case "720p": return CAPTURE_SIZES["720p"];
     case "1080p": return CAPTURE_SIZES["1080p"];
     case "1440p": return CAPTURE_SIZES["1440p"];
@@ -172,6 +176,7 @@ export class RecordingService {
   private finalizedResult?: RecordingResult;
   private stopResult?: RecordingResult;
   private postProcessingProcess?: FfmpegProcess;
+  private postProcessingCancelled = false;
   private selectedExportModes: RecordingMode[] = ["HORIZONTAL", "VERTICAL"];
 
   constructor(private readonly mediaCore: MediaCoreService) {}
@@ -316,7 +321,7 @@ export class RecordingService {
 
       const recordingId = new Date().toISOString().replace(/[:.]/g, "-");
       const directory = options.outputDirectory
-        ?? join(app.getPath("videos"), "DUI Studio", `recording-${recordingId}`);
+        ?? join(app.getPath("videos"), "Babu Studio", `recording-${recordingId}`);
       await mkdir(join(directory, "exports"), { recursive: true });
       this.projectDirectory = directory;
       this.projectFile = join(directory, "project.json");
@@ -535,6 +540,13 @@ export class RecordingService {
     };
   }
 
+  cancelPostProcessing(): void {
+    if (this.postProcessingState === "PROCESSING") {
+      this.postProcessingCancelled = true;
+      this.stopPostProcessing();
+    }
+  }
+
   stopPostProcessing(): void {
     if (this.postProcessingProcess && !this.postProcessingProcess.killed) {
       this.postProcessingProcess.kill("SIGTERM");
@@ -627,6 +639,7 @@ export class RecordingService {
   }
 
   private launchPostProcessing(result: RecordingResult): void {
+    this.postProcessingCancelled = false;
     this.postProcessingPromise = this.postProcess(result)
       .catch((error: unknown) => this.handlePostProcessingFailure(error));
   }
@@ -671,6 +684,12 @@ export class RecordingService {
       if (exportEntry.state === "COMPLETED") {
         continue;
       }
+      if (this.postProcessingCancelled) {
+        exportEntry.state = "ERROR";
+        exportEntry.error = "Export cancelled";
+        failedExports.push(`${exportEntry.mode}: ${exportEntry.error}`);
+        continue;
+      }
       exportEntry.state = "PROCESSING";
       exportEntry.error = undefined;
       exportEntry.progress = 0;
@@ -706,7 +725,9 @@ export class RecordingService {
     this.postProcessingState = failedExports.length > 0 ? "ERROR" : "COMPLETED";
     this.postProcessingError = failedExports.length > 0 ? failedExports.join("; ") : undefined;
     project.postProcessingStatus = this.postProcessingState;
-    project.status = failedExports.length > 0 ? "EXPORT_FAILED" : "COMPLETED";
+    project.status = this.postProcessingCancelled
+      ? "EXPORT_CANCELLED"
+      : failedExports.length > 0 ? "EXPORT_FAILED" : "COMPLETED";
     project.postProcessingError = this.postProcessingError ?? null;
     if (failedExports.length > 0) {
       project.postProcessingFailedAt = new Date().toISOString();
@@ -732,9 +753,6 @@ export class RecordingService {
     }
     const videoTracks = result.videoTracks;
     const activeLayers = scene.layers.filter((layer) => layer.enabled);
-    if (activeLayers.some((layer) => layer.kind === "display-capture")) {
-      throw new Error(`${mode} scene includes display capture, which the native media core does not record.`);
-    }
     const videoLayers = activeLayers.filter((layer) => layer.kind === "game-capture" || layer.kind === "camera-device").reverse();
     if (videoLayers.length === 0) {
       throw new Error(`${mode} scene has no recorded capture-card or webcam video source.`);
@@ -849,10 +867,16 @@ export class RecordingService {
       exportPath,
     );
 
+    if (this.postProcessingCancelled) {
+      throw new Error("Export cancelled");
+    }
     try {
       await this.runFfmpegTracked(args, durationSeconds, onProgress);
     } catch (hardwareError) {
       await rm(exportPath, { force: true });
+      if (this.postProcessingCancelled) {
+        throw new Error("Export cancelled");
+      }
       onProgress(0);
       const softwareArgs = [...args];
       const encoderIndex = softwareArgs.indexOf("h264_videotoolbox");
@@ -876,7 +900,12 @@ export class RecordingService {
   ): Promise<void> {
     return runFfmpeg(
       args,
-      (child) => { this.postProcessingProcess = child; },
+      (child) => {
+        this.postProcessingProcess = child;
+        if (this.postProcessingCancelled) {
+          child.kill("SIGTERM");
+        }
+      },
       (child) => {
         if (this.postProcessingProcess === child) {
           this.postProcessingProcess = undefined;

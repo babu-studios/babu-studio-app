@@ -212,7 +212,7 @@ export function ResourceMonitor() {
             ["Model", cpu.model],
             ["Cores", String(cpu.cores)],
             ["System usage", `${cpu.systemPercent.toFixed(1)}%`],
-            ["DUI Studio", `${cpu.appPercent.toFixed(1)}%`],
+            ["Babu Studio", `${cpu.appPercent.toFixed(1)}%`],
           ]}
         />
         <PopupSection
@@ -229,7 +229,7 @@ export function ResourceMonitor() {
             ["Used", formatBytes(memory.usedBytes)],
             ["Free", formatBytes(Math.max(0, memory.totalBytes - memory.usedBytes))],
             ["Total", formatBytes(memory.totalBytes)],
-            ["DUI Studio", formatBytes(memory.appBytes)],
+            ["Babu Studio", formatBytes(memory.appBytes)],
           ]}
         />
         <PopupSection

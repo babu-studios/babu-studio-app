@@ -25,10 +25,10 @@ export type NativeCaptureDevice = {
 };
 
 export type RecordingLayer = {
-  kind: "gameplay" | "camera" | "alerts" | "camera-device" | "display-capture" | "game-capture";
+  kind: "gameplay" | "camera" | "alerts" | "camera-device" | "game-capture";
   enabled: boolean;
   deviceId: string;
-  captureResolution: "720p" | "1080p" | "1440p" | "2160p";
+  captureResolution: "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p";
   crop: { top: number; right: number; bottom: number; left: number };
   sourceDimensions: { width: number; height: number } | null;
   transforms: Record<"landscape" | "portrait", { x: number; y: number; width: number; height: number }>;
@@ -60,7 +60,7 @@ export type StartRecordingRequest = {
   captureWidth?: number;
   captureHeight?: number;
   exportModes?: RecordingMode[];
-  exportResolution?: "720p" | "1080p" | "1440p" | "2160p";
+  exportResolution?: "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p";
   scene: RecordingScene;
 };
 

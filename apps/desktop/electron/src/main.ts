@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, session, systemPreferences } from "electron";
 import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
-import { registerDisplayCaptureIpc } from "./ipc/display-capture.ipc";
+import { registerMediaAccessIpc } from "./ipc/media-access.ipc";
 import { registerSystemStatsIpc } from "./ipc/system-stats.ipc";
 import { MediaCoreService } from "./services/media-core.service";
 import { RecordingService } from "./services/recording.service";
@@ -10,7 +10,7 @@ import { createMainWindow } from "./services/window.service";
 const mediaCore = new MediaCoreService();
 const recording = new RecordingService(mediaCore);
 
-app.setName("DUI Studio");
+app.setName("Babu Studio");
 
 function getMediaCorePath(): string {
   const configuredPath = process.env.DUI_STUDIO_MEDIA_CORE_PATH;
@@ -26,7 +26,7 @@ function getMediaCorePath(): string {
 
 app.whenReady().then(async () => {
   registerMediaCoreIpc(mediaCore, recording);
-  registerDisplayCaptureIpc();
+  registerMediaAccessIpc();
   registerSystemStatsIpc();
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
@@ -136,9 +136,9 @@ app.on("before-quit", (event) => {
     const result = await dialog.showMessageBox({
       type: "warning",
       title: "Recording or export could not be finished",
-      message: "DUI Studio could not safely finalize the recording or complete both exports.",
+      message: "Babu Studio could not safely finalize the recording or complete both exports.",
       detail: `${error instanceof Error ? error.message : String(error)}\n\nKeep the app open to retry or inspect the recording. Quitting anyway may leave an incomplete recording or export.`,
-      buttons: ["Keep DUI Studio Open", "Quit Anyway"],
+      buttons: ["Keep Babu Studio Open", "Quit Anyway"],
       defaultId: 0,
       cancelId: 0,
     });

@@ -1,5 +1,5 @@
 export const electronWindowDefaults = {
-  title: "DUI Studio",
+  title: "Babu Studio",
   width: 1280,
   height: 800,
   minWidth: 960,
