@@ -138,6 +138,20 @@ function formatRecordingExports(exports: RecordingExport[] | undefined): string 
   }).join(" · ");
 }
 
+// Calibrated from a measured 1080p VideoToolbox export (~14.3 Mbps incl. audio); scales with pixel count.
+const EXPORT_BITS_PER_PIXEL_SECOND = 6.9;
+
+function estimateExportBytes(durationMs: number, modes: RecordingMode[], resolution: ExportResolutionId): number {
+  const { horizontal } = EXPORT_RESOLUTIONS[resolution];
+  const bytesPerLayout = (horizontal.width * horizontal.height * EXPORT_BITS_PER_PIXEL_SECOND * durationMs / 1000) / 8;
+  return bytesPerLayout * modes.length;
+}
+
+function formatStorageSize(bytes: number): string {
+  const gigabytes = bytes / 1024 ** 3;
+  return gigabytes >= 1 ? `${gigabytes.toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+}
+
 function describeExportSelection(modes: RecordingMode[]): string {
   const names = modes.map((mode) => mode === "HORIZONTAL" ? "horizontal" : "vertical");
   return names.length === 2 ? "horizontal and vertical layouts" : `${names[0] ?? "selected"} layout`;
@@ -1130,6 +1144,30 @@ export default function App() {
   const [exportPickerError, setExportPickerError] = useState<string | null>(null);
   const [savedRecordings, setSavedRecordings] = useState<RecordingSummary[]>([]);
   const [selectedRecordingId, setSelectedRecordingId] = useState("");
+  const [exportFreeBytes, setExportFreeBytes] = useState<number | null>(null);
+  const selectedRecordingSummary = savedRecordings.find((entry) => entry.id === selectedRecordingId);
+  const estimatedExportBytes = selectedRecordingSummary
+    ? estimateExportBytes(selectedRecordingSummary.durationMs, exportModes, exportResolution)
+    : 0;
+  const exportDiskShort = exportFreeBytes !== null && estimatedExportBytes > exportFreeBytes;
+  useEffect(() => {
+    if (!exportPickerOpen) {
+      return;
+    }
+    let cancelled = false;
+    window.babuStudio.getSystemStats()
+      .then((stats) => {
+        if (!cancelled) {
+          setExportFreeBytes(stats.disk.totalBytes > 0 ? stats.disk.freeBytes : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setExportFreeBytes(null);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [exportPickerOpen]);
   const exportCancelRequestedRef = useRef(false);
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActionInFlightRef = useRef(false);
@@ -2528,63 +2566,6 @@ export default function App() {
             </div>
           </div>
 
-          <section className="inspector-section export-selection-section">
-            <div className="export-selection-heading">
-              <div className="section-title">
-                <Icon name="export" />
-                <h3>Export/Record</h3>
-              </div>
-              <p className="export-format-hint">Choose one or both. Your source recording is shared.</p>
-            </div>
-            <div className="export-format-options" role="group" aria-label="Layouts to export">
-              {([
-                { mode: "HORIZONTAL", name: "Horizontal", ratio: "16:9" },
-                { mode: "VERTICAL", name: "Vertical", ratio: "9:16" },
-              ] as const).map(({ mode, name, ratio }) => {
-                const selected = exportModes.includes(mode);
-                return (
-                  <label
-                    className={`export-format-option${selected ? " export-format-option--selected" : ""}`}
-                    key={mode}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      disabled={recordingBusy
-                        || isRecordingActive
-                        || postProcessingState === "PROCESSING"
-                        || (selected && exportModes.length === 1)}
-                      onChange={() => setExportModes((current) => (
-                        current.includes(mode)
-                          ? current.length > 1 ? current.filter((entry) => entry !== mode) : current
-                          : [...current, mode]
-                      ))}
-                    />
-                    <span className="export-format-copy">
-                      <strong>{name}</strong>
-                      <small>{ratio} · MP4</small>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-            <label className="export-resolution">
-              <span>Export quality</span>
-              <Dropdown
-                value={exportResolution}
-                aria-label="Export quality"
-                disabled={recordingBusy || isRecordingActive || postProcessingState === "PROCESSING"}
-                onChange={(event) => setExportResolution(event.target.value as ExportResolutionId)}
-              >
-                {(Object.entries(EXPORT_RESOLUTIONS) as [ExportResolutionId, (typeof EXPORT_RESOLUTIONS)[ExportResolutionId]][]).map(([id, option]) => (
-                  <option key={id} value={id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Dropdown>
-            </label>
-          </section>
-
           <section className="inspector-section">
             <div className="section-title">
               <Icon name="scenes" />
@@ -3289,10 +3270,83 @@ export default function App() {
                     ))}
                   </Dropdown>
                 </label>
-                <p className="export-picker-summary">
-                  Will export {describeExportSelection(exportModes)} at {EXPORT_RESOLUTIONS[exportResolution].label}.
-                  Change this in Export/Record.
-                </p>
+                <div className="export-format-options" role="group" aria-label="Layouts to export">
+                  {([
+                    { mode: "HORIZONTAL", name: "Horizontal", ratio: "16:9" },
+                    { mode: "VERTICAL", name: "Vertical", ratio: "9:16" },
+                  ] as const).map(({ mode, name, ratio }) => {
+                    const selected = exportModes.includes(mode);
+                    return (
+                      <label
+                        className={`export-format-option${selected ? " export-format-option--selected" : ""}`}
+                        key={mode}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={recordingBusy || (selected && exportModes.length === 1)}
+                          onChange={() => setExportModes((current) => (
+                            current.includes(mode)
+                              ? current.length > 1 ? current.filter((entry) => entry !== mode) : current
+                              : [...current, mode]
+                          ))}
+                        />
+                        <span className="export-format-copy">
+                          <strong>{name}</strong>
+                          <small>{ratio} · MP4</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <label className="export-resolution">
+                  <span>Export quality</span>
+                  <Dropdown
+                    value={exportResolution}
+                    aria-label="Export quality"
+                    disabled={recordingBusy}
+                    onChange={(event) => setExportResolution(event.target.value as ExportResolutionId)}
+                  >
+                    {(Object.entries(EXPORT_RESOLUTIONS) as [ExportResolutionId, (typeof EXPORT_RESOLUTIONS)[ExportResolutionId]][]).map(([id, option]) => (
+                      <option key={id} value={id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </Dropdown>
+                </label>
+                {selectedRecordingSummary && (
+                  <div className={`export-space${exportDiskShort ? " export-space--short" : ""}`} role="status">
+                    <div className="export-space-header">
+                      <span className="export-space-label">Estimated space needed</span>
+                      <strong className="export-space-value">~{formatStorageSize(estimatedExportBytes)}</strong>
+                    </div>
+                    {exportFreeBytes !== null && (
+                      <>
+                        <div
+                          className="export-space-track"
+                          role="progressbar"
+                          aria-label="Estimated share of free disk space"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={Math.min(100, Math.round(estimatedExportBytes / Math.max(1, exportFreeBytes) * 100))}
+                        >
+                          <span
+                            className="export-space-fill"
+                            style={{ width: `${Math.min(100, estimatedExportBytes / Math.max(1, exportFreeBytes) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="export-space-footer">
+                          <span>{formatStorageSize(exportFreeBytes)} free</span>
+                          <span className="export-space-status">
+                            {exportDiskShort
+                              ? "Not enough free space"
+                              : `${formatStorageSize(exportFreeBytes - estimatedExportBytes)} left after export`}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </>
             )}
             {exportPickerError && <p className="export-picker-error" role="alert">{exportPickerError}</p>}
