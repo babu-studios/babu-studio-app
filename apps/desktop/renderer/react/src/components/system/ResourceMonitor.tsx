@@ -135,7 +135,7 @@ export function ResourceMonitor() {
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const next = await window.duiStudio.getProcessSnapshot();
+        const next = await window.babuStudio.getProcessSnapshot();
         if (!cancelled) {
           setProcesses(next);
         }
@@ -158,7 +158,7 @@ export function ResourceMonitor() {
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const next = await window.duiStudio.getSystemStats();
+        const next = await window.babuStudio.getSystemStats();
         if (!cancelled) {
           setStats(next);
         }

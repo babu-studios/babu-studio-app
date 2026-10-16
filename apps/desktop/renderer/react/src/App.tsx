@@ -162,9 +162,11 @@ const LAYER_OPTIONS: LayerOption[] = [
   { name: "Capture Card", description: "Record gameplay from a capture card.", icon: "gameplay", kind: "game-capture" },
 ];
 
-const STUDIO_STATE_STORAGE_KEY = "dui-studio.studio-state.v1";
+const STUDIO_STATE_STORAGE_KEY = "babu-studio.studio-state.v1";
+const LEGACY_STUDIO_STATE_STORAGE_KEY = "dui-studio.studio-state.v1";
 const PORTRAIT_PLACEMENT_VERSION = 3;
-const AUDIO_MIXER_STORAGE_KEY = "dui-studio.audio-mixer.v1";
+const AUDIO_MIXER_STORAGE_KEY = "babu-studio.audio-mixer.v1";
+const LEGACY_AUDIO_MIXER_STORAGE_KEY = "dui-studio.audio-mixer.v1";
 
 type PersistedAudioMixer = {
   tracks: AudioTrack[];
@@ -193,7 +195,8 @@ function readStringRecord(value: unknown): Record<string, string> {
 
 function loadAudioMixer(): PersistedAudioMixer {
   try {
-    const saved = localStorage.getItem(AUDIO_MIXER_STORAGE_KEY);
+    const saved = localStorage.getItem(AUDIO_MIXER_STORAGE_KEY)
+      ?? localStorage.getItem(LEGACY_AUDIO_MIXER_STORAGE_KEY);
     if (!saved) {
       return DEFAULT_AUDIO_MIXER;
     }
@@ -464,7 +467,8 @@ function loadPersistedStudioState(): PersistedStudioState {
   };
 
   try {
-    const savedState = localStorage.getItem(STUDIO_STATE_STORAGE_KEY);
+    const savedState = localStorage.getItem(STUDIO_STATE_STORAGE_KEY)
+      ?? localStorage.getItem(LEGACY_STUDIO_STATE_STORAGE_KEY);
     if (!savedState) {
       return emptyState;
     }
@@ -1422,8 +1426,8 @@ export default function App() {
         if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
           throw new Error("Video input discovery is not supported in this environment.");
         }
-        if (typeof window.duiStudio?.requestCameraAccess === "function") {
-          const granted = await window.duiStudio.requestCameraAccess();
+        if (typeof window.babuStudio?.requestCameraAccess === "function") {
+          const granted = await window.babuStudio.requestCameraAccess();
           if (!granted) {
             throw new Error("Camera permission was denied. Enable camera access in System Settings and restart Babu Studio.");
           }
@@ -1767,8 +1771,8 @@ export default function App() {
     try {
       const reconnectable = currentLayers.filter((layer) => layer.deviceId);
       if (reconnectable.some((layer) => layer.kind === "camera-device" || layer.kind === "game-capture")) {
-        if (typeof window.duiStudio?.requestCameraAccess === "function") {
-          const granted = await window.duiStudio.requestCameraAccess();
+        if (typeof window.babuStudio?.requestCameraAccess === "function") {
+          const granted = await window.babuStudio.requestCameraAccess();
           if (!granted) {
             throw new Error("Camera permission was denied. Enable camera access in System Settings and restart Babu Studio.");
           }
@@ -1846,7 +1850,7 @@ export default function App() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const status = await window.duiStudio.getRecordingStatus();
+        const status = await window.babuStudio.getRecordingStatus();
         if (cancelled) {
           return;
         }
@@ -2015,7 +2019,7 @@ export default function App() {
         ));
       }
 
-      const result = await window.duiStudio.startRecording({
+      const result = await window.babuStudio.startRecording({
         captureCard: captureNames[0],
         camera: cameraNames[0],
         gameAudio: gameAudioDevice?.name,
@@ -2061,7 +2065,7 @@ export default function App() {
     recordingActionInFlightRef.current = true;
     setRecordingBusy(true);
     try {
-      const result = await window.duiStudio.stopRecording();
+      const result = await window.babuStudio.stopRecording();
       setPostProcessingState(result.postProcessingState ?? "NOT_STARTED");
       setRecordingExports(result.exports ?? []);
       setRecordingNotice(
@@ -2086,7 +2090,7 @@ export default function App() {
     setExportPickerLoading(true);
     setExportPickerError(null);
     try {
-      const recordings = await window.duiStudio.listRecordings();
+      const recordings = await window.babuStudio.listRecordings();
       setSavedRecordings(recordings);
       setSelectedRecordingId((current) => (
         recordings.some((entry) => entry.id === current) ? current : recordings[0]?.id ?? ""
@@ -2107,7 +2111,7 @@ export default function App() {
     setExportPickerError(null);
     try {
       exportCancelRequestedRef.current = false;
-      const result = await window.duiStudio.exportRecording({
+      const result = await window.babuStudio.exportRecording({
         id: selectedRecordingId,
         exportModes,
         exportResolution,
@@ -2132,7 +2136,7 @@ export default function App() {
     recordingActionInFlightRef.current = true;
     setRecordingBusy(true);
     try {
-      const result = await window.duiStudio.retryRecordingExport();
+      const result = await window.babuStudio.retryRecordingExport();
       setPostProcessingState(result.postProcessingState ?? "PROCESSING");
       setRecordingExports(result.exports ?? []);
       setExportDialogOpen(true);
@@ -2303,8 +2307,8 @@ export default function App() {
     if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
       throw new Error("Microphone input discovery is not supported in this environment.");
     }
-    if (typeof window.duiStudio?.requestMicrophoneAccess === "function") {
-      const granted = await window.duiStudio.requestMicrophoneAccess();
+    if (typeof window.babuStudio?.requestMicrophoneAccess === "function") {
+      const granted = await window.babuStudio.requestMicrophoneAccess();
       if (!granted) {
         throw new Error("Microphone permission was denied. Allow Babu Studio under System Settings > Privacy & Security > Microphone, then reopen these settings.");
       }
@@ -3327,11 +3331,11 @@ export default function App() {
                       setExportDialogOpen(true);
                       setRecordingNotice({ error: true, text: "Cancel is unavailable in this running session. Restart Babu Studio to load the latest version." });
                     };
-                    if (typeof window.duiStudio.cancelRecordingExport !== "function") {
+                    if (typeof window.babuStudio.cancelRecordingExport !== "function") {
                       failCancel();
                       return;
                     }
-                    void window.duiStudio.cancelRecordingExport().catch(failCancel);
+                    void window.babuStudio.cancelRecordingExport().catch(failCancel);
                   }}
                 >
                   <Icon name="close" />

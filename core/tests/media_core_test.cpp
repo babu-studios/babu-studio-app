@@ -18,7 +18,7 @@ int main() {
     static_cast<void>(media_core.handle_command("UNKNOWN"));
   } catch (const std::invalid_argument&) {
     const auto output_directory = std::filesystem::temp_directory_path()
-                                  / ("dui-studio-core-test-"
+                                  / ("babu-studio-core-test-"
                                      + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const std::string start_command = "START_RECORDING\tmode=HORIZONTAL\tfps=30\tgameVolume=1\tmicrophoneVolume=1"
                                       "\toutputDir="

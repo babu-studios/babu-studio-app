@@ -39,7 +39,7 @@ function fail(message) {
 }
 
 function probeMedia(filePath) {
-  const ffprobe = process.env.DUI_STUDIO_FFPROBE_PATH || "ffprobe";
+  const ffprobe = process.env.BABU_STUDIO_FFPROBE_PATH || "ffprobe";
   const probe = spawnSync(ffprobe, [
     "-v", "error",
     "-show_entries", "format=duration:stream=codec_type,width,height",
@@ -66,26 +66,26 @@ async function main() {
     fail(`Media core not found at ${mediaCore}. Build the core target before running this flow test.`);
   }
   if (!existsSync(mainEntry)) {
-    fail("Electron main bundle is missing. Build the @dui-studio/electron workspace first.");
+    fail("Electron main bundle is missing. Build the @babu-studios/electron workspace first.");
   }
-  const ffprobe = process.env.DUI_STUDIO_FFPROBE_PATH || "ffprobe";
+  const ffprobe = process.env.BABU_STUDIO_FFPROBE_PATH || "ffprobe";
   const ffprobeCheck = spawnSync(ffprobe, ["-version"], { encoding: "utf8" });
   if (ffprobeCheck.error || ffprobeCheck.status !== 0) {
     fail(`ffprobe is unavailable: ${ffprobeCheck.error?.message ?? ffprobeCheck.stderr.trim()}`);
   }
 
-  const outputDirectory = await mkdtemp(join(tmpdir(), "dui-studio-recording-flow-"));
+  const outputDirectory = await mkdtemp(join(tmpdir(), "babu-studio-recording-flow-"));
   let succeeded = false;
   try {
     const child = spawn(electronBinary, [mainEntry], {
       cwd: repositoryRoot,
       env: {
         ...process.env,
-        DUI_STUDIO_MEDIA_CORE_PATH: mediaCore,
-        DUI_STUDIO_SYNTHETIC_FLOW_TEST: "1",
-        DUI_STUDIO_FLOW_TEST_DURATION_MS: String(durationMs),
-        DUI_STUDIO_FLOW_TEST_EXPORTS: exportModes.join(","),
-        DUI_STUDIO_FLOW_TEST_OUTPUT_DIR: outputDirectory,
+        BABU_STUDIO_MEDIA_CORE_PATH: mediaCore,
+        BABU_STUDIO_SYNTHETIC_FLOW_TEST: "1",
+        BABU_STUDIO_FLOW_TEST_DURATION_MS: String(durationMs),
+        BABU_STUDIO_FLOW_TEST_EXPORTS: exportModes.join(","),
+        BABU_STUDIO_FLOW_TEST_OUTPUT_DIR: outputDirectory,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

@@ -3,7 +3,7 @@ import type { ProcessSnapshot, SystemStats } from "./system-stats";
 
 declare global {
   interface Window {
-    duiStudio: {
+    babuStudio: {
       getMediaCoreStatus(): Promise<MediaCoreStatus>;
       startRecording(request: StartRecordingRequest): Promise<RecordingResult>;
       stopRecording(): Promise<RecordingResult>;

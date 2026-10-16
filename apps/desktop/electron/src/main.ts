@@ -37,7 +37,7 @@ function migrateLegacyUserData(): void {
 migrateLegacyUserData();
 
 function getMediaCorePath(): string {
-  const configuredPath = process.env.DUI_STUDIO_MEDIA_CORE_PATH;
+  const configuredPath = process.env.BABU_STUDIO_MEDIA_CORE_PATH;
   if (configuredPath) {
     return configuredPath;
   }
@@ -92,19 +92,19 @@ app.whenReady().then(async () => {
     console.error("Unable to start the C++ media core:", error);
   }
 
-  if (process.env.DUI_STUDIO_SYNTHETIC_FLOW_TEST === "1") {
+  if (process.env.BABU_STUDIO_SYNTHETIC_FLOW_TEST === "1") {
     try {
       if (!mediaCoreReady) {
         throw new Error("The media core did not start; cannot run the synthetic flow test.");
       }
-      const durationMs = Number(process.env.DUI_STUDIO_FLOW_TEST_DURATION_MS ?? 60_000);
-      const exportModes = (process.env.DUI_STUDIO_FLOW_TEST_EXPORTS ?? "HORIZONTAL,VERTICAL")
+      const durationMs = Number(process.env.BABU_STUDIO_FLOW_TEST_DURATION_MS ?? 60_000);
+      const exportModes = (process.env.BABU_STUDIO_FLOW_TEST_EXPORTS ?? "HORIZONTAL,VERTICAL")
         .split(",")
         .map((mode) => mode.trim())
         .filter((mode): mode is "HORIZONTAL" | "VERTICAL" => mode === "HORIZONTAL" || mode === "VERTICAL");
-      const outputDirectory = process.env.DUI_STUDIO_FLOW_TEST_OUTPUT_DIR;
+      const outputDirectory = process.env.BABU_STUDIO_FLOW_TEST_OUTPUT_DIR;
       if (!outputDirectory) {
-        throw new Error("DUI_STUDIO_FLOW_TEST_OUTPUT_DIR must point to a unique test output directory.");
+        throw new Error("BABU_STUDIO_FLOW_TEST_OUTPUT_DIR must point to a unique test output directory.");
       }
       const result = await recording.runSyntheticFlowTest(
         durationMs,

@@ -128,7 +128,7 @@ function runFfmpeg(
   onClose: (child: FfmpegProcess) => void,
   onOutputTime: (microseconds: number) => void,
 ): Promise<void> {
-  const ffmpegPath = process.env.DUI_STUDIO_FFMPEG_PATH || "ffmpeg";
+  const ffmpegPath = process.env.BABU_STUDIO_FFMPEG_PATH || "ffmpeg";
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
     onSpawn(child);

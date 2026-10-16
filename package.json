@@ -1,5 +1,5 @@
 {
-  "name": "dui-studio",
+  "name": "babu-studio-app",
   "private": true,
   "version": "0.1.0",
   "description": "A macOS creator studio built with Electron, React, and a C++ media core.",
@@ -10,11 +10,11 @@
   "scripts": {
     "build:core": "cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Release && cmake --build core/build --config Release",
     "test:core": "cmake -S core -B core/build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON && cmake --build core/build --config Debug && ctest --test-dir core/build --output-on-failure",
-    "dev": "npm run build:core && npm run dev --workspace @dui-studio/electron",
-    "build": "npm run build:core && npm run build --workspace @dui-studio/electron",
-    "package:mac": "npm run build && npm run package:mac --workspace @dui-studio/electron",
-    "typecheck": "npm run typecheck --workspace @dui-studio/electron && npm run typecheck --workspace @dui-studio/renderer",
-    "test:recording-flow": "npm run build --workspace @dui-studio/electron && node scripts/test-recording-flow.mjs"
+    "dev": "npm run build:core && npm run dev --workspace @babu-studios/electron",
+    "build": "npm run build:core && npm run build --workspace @babu-studios/electron",
+    "package:mac": "npm run build && npm run package:mac --workspace @babu-studios/electron",
+    "typecheck": "npm run typecheck --workspace @babu-studios/electron && npm run typecheck --workspace @babu-studios/renderer",
+    "test:recording-flow": "npm run build --workspace @babu-studios/electron && node scripts/test-recording-flow.mjs"
   },
   "allowScripts": {
     "electron@36.9.5": true,

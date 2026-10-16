@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { ProcessSnapshot, SystemStats } from "@shared/types/system-stats";
 import type { ExportRecordingRequest, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "@shared/types/media";
 
-contextBridge.exposeInMainWorld("duiStudio", {
+contextBridge.exposeInMainWorld("babuStudio", {
   getMediaCoreStatus: (): Promise<MediaCoreStatus> => ipcRenderer.invoke("media-core:get-status"),
   startRecording: (request: StartRecordingRequest): Promise<RecordingResult> => ipcRenderer.invoke("recording:start", request),
   stopRecording: (): Promise<RecordingResult> => ipcRenderer.invoke("recording:stop"),

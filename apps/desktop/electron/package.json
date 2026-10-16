@@ -1,5 +1,5 @@
 {
-  "name": "@dui-studio/electron",
+  "name": "@babu-studios/electron",
   "version": "0.1.0",
   "private": true,
   "description": "Electron desktop shell for Babu Studio.",
@@ -20,7 +20,7 @@
     "vite": "^6.0.0"
   },
   "build": {
-    "appId": "studio.dui.app",
+    "appId": "studio.babu.app",
     "productName": "Babu Studio",
     "directories": {
       "output": "../../../release"

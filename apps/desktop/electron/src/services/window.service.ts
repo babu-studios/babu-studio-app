@@ -29,7 +29,7 @@ export function createMainWindow(): BrowserWindow {
 
   if (process.env.ELECTRON_RENDERER_URL) {
     const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL);
-    rendererUrl.searchParams.set("duiStudioElectron", "1");
+    rendererUrl.searchParams.set("babuStudioElectron", "1");
     void window.loadURL(rendererUrl.toString());
   } else {
     void window.loadFile(join(__dirname, "../renderer/index.html"));

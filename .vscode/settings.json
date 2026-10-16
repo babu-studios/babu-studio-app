@@ -1,3 +1,3 @@
 {
-    "cmake.sourceDirectory": "/Users/deepbag/Desktop/dui-studio-app/core"
+    "cmake.sourceDirectory": "${workspaceFolder}/core"
 }
