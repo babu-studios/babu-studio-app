@@ -2195,3 +2195,24 @@ input[type="range"] {
   color: #7d838b;
   font-size: 11px;
 }
+
+.export-picker-dialog .export-resolution {
+  margin-top: 16px;
+}
+
+.export-picker-summary {
+  margin: 12px 0 0;
+  color: #8b979d;
+  font-size: 11px;
+}
+
+.export-picker-error {
+  margin: 12px 0 0;
+  color: #ffb4b4;
+  font-size: 11px;
+}
+
+.export-progress-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

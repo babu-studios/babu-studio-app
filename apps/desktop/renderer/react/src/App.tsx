@@ -13,7 +13,7 @@ import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS, type ExportResolutionId 
 import { Dropdown } from "./components/common/Dropdown";
 import { IconButton } from "./components/common/IconButton";
 import { ResourceMonitor } from "./components/system/ResourceMonitor";
-import type { PostProcessingState, RecordingExport, RecordingMode, RecordingScene } from "@shared/types/media";
+import type { PostProcessingState, RecordingExport, RecordingMode, RecordingScene, RecordingSummary } from "@shared/types/media";
 
 type OutputId = "landscape" | "portrait";
 type LayerTransforms = Record<OutputId, LayerTransform>;
@@ -115,6 +115,12 @@ const OUTPUTS: { id: OutputId; name: string; ratio: string; size: string; width:
   { id: "landscape", name: "Landscape", ratio: "16:9", size: "1920 × 1080", width: 1920, height: 1080, icon: "landscape" },
   { id: "portrait", name: "Portrait", ratio: "9:16", size: "1080 × 1920", width: 1080, height: 1920, icon: "portrait" },
 ];
+
+function formatRecordingLabel(entry: RecordingSummary): string {
+  const created = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : entry.id;
+  const size = (entry.fileSizeBytes / 1048576).toFixed(0);
+  return `${created} · ${formatRecordingTime(entry.durationMs)} · ${size} MB${entry.exported ? " · exported" : ""}`;
+}
 
 function formatRecordingTime(milliseconds: number): string {
   const totalSeconds = Math.floor(Math.max(0, milliseconds) / 1000);
@@ -1115,6 +1121,11 @@ export default function App() {
   const [postProcessingState, setPostProcessingState] = useState<PostProcessingState>("NOT_STARTED");
   const [recordingExports, setRecordingExports] = useState<RecordingExport[]>([]);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportPickerOpen, setExportPickerOpen] = useState(false);
+  const [exportPickerLoading, setExportPickerLoading] = useState(false);
+  const [exportPickerError, setExportPickerError] = useState<string | null>(null);
+  const [savedRecordings, setSavedRecordings] = useState<RecordingSummary[]>([]);
+  const [selectedRecordingId, setSelectedRecordingId] = useState("");
   const exportCancelRequestedRef = useRef(false);
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActionInFlightRef = useRef(false);
@@ -2053,18 +2064,11 @@ export default function App() {
       const result = await window.duiStudio.stopRecording();
       setPostProcessingState(result.postProcessingState ?? "NOT_STARTED");
       setRecordingExports(result.exports ?? []);
-      if (result.postProcessingState === "PROCESSING" || result.postProcessingState === "COMPLETED") {
-        setExportDialogOpen(true);
-      }
       setRecordingNotice(
         result.success
           ? {
-            error: result.postProcessingState === "ERROR",
-            text: result.postProcessingState === "PROCESSING"
-              ? `Source saved (${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB). Exporting ${describeExportSelection(exportModes)}...`
-              : result.postProcessingState === "ERROR"
-                ? `Source saved, but export failed: ${result.error ?? "Project metadata could not be saved."} ${formatRecordingExports(result.exports)}`
-                : `Saved ${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB: ${result.filePath}`,
+            error: false,
+            text: `Saved ${(result.durationMs / 1000).toFixed(1)}s, ${(result.fileSizeBytes / 1048576).toFixed(1)} MB. Use Export to render it.`,
           }
           : { error: true, text: result.error ?? "Recording failed." },
       );
@@ -2072,6 +2076,50 @@ export default function App() {
       setRecordingNotice({ error: true, text: error instanceof Error ? error.message : "Recording failed." });
     } finally {
       setRecordingActive(false);
+      recordingActionInFlightRef.current = false;
+      setRecordingBusy(false);
+    }
+  }
+
+  async function openExportPicker(): Promise<void> {
+    setExportPickerOpen(true);
+    setExportPickerLoading(true);
+    setExportPickerError(null);
+    try {
+      const recordings = await window.duiStudio.listRecordings();
+      setSavedRecordings(recordings);
+      setSelectedRecordingId((current) => (
+        recordings.some((entry) => entry.id === current) ? current : recordings[0]?.id ?? ""
+      ));
+    } catch (error) {
+      setExportPickerError(error instanceof Error ? error.message : "Unable to load recordings.");
+    } finally {
+      setExportPickerLoading(false);
+    }
+  }
+
+  async function startSelectedExport(): Promise<void> {
+    if (recordingActionInFlightRef.current || recordingBusy || !selectedRecordingId) {
+      return;
+    }
+    recordingActionInFlightRef.current = true;
+    setRecordingBusy(true);
+    setExportPickerError(null);
+    try {
+      exportCancelRequestedRef.current = false;
+      const result = await window.duiStudio.exportRecording({
+        id: selectedRecordingId,
+        exportModes,
+        exportResolution,
+      });
+      setPostProcessingState(result.postProcessingState ?? "PROCESSING");
+      setRecordingExports(result.exports ?? []);
+      setExportPickerOpen(false);
+      setExportDialogOpen(true);
+      setRecordingNotice({ error: false, text: `Exporting ${describeExportSelection(exportModes)}...` });
+    } catch (error) {
+      setExportPickerError(error instanceof Error ? error.message : "Unable to start the export.");
+    } finally {
       recordingActionInFlightRef.current = false;
       setRecordingBusy(false);
     }
@@ -2367,11 +2415,20 @@ export default function App() {
         <div className="topbar-actions">
           <ResourceMonitor />
           <button
+            className="action-button action-button--export"
+            disabled={recordingBusy || recordingActive || postProcessingState === "PROCESSING"}
+            title="Choose a saved recording to export"
+            onClick={() => void openExportPicker()}
+          >
+            <Icon name="export" />
+            Export
+          </button>
+          <button
             className={`action-button action-button--record${recordingActive ? " action-button--recording" : ""}`}
             disabled={recordingBusy || postProcessingState === "PROCESSING"}
             title={recordingActive
               ? "Stop the current recording"
-              : `Record and export the shared scene to ${describeExportSelection(exportModes)}`}
+              : `Record the shared scene`}
             onClick={() => {
               if (recordingActive) {
                 void stopRecording();
@@ -3184,6 +3241,68 @@ export default function App() {
           </div>
         </section>
       </div>
+      {exportPickerOpen && (
+        <div className="export-progress-backdrop">
+          <section
+            className="export-progress-dialog export-picker-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="export-picker-title"
+          >
+            <div className="export-progress-heading">
+              <button
+                className="export-progress-cancel"
+                type="button"
+                aria-label="Close export dialog"
+                disabled={recordingBusy}
+                onClick={() => setExportPickerOpen(false)}
+              >
+                <Icon name="close" />
+              </button>
+              <div>
+                <span className="export-progress-kicker">EXPORT</span>
+                <h2 id="export-picker-title">Select a recording</h2>
+              </div>
+            </div>
+            {exportPickerLoading ? (
+              <p className="export-progress-description">Loading recordings…</p>
+            ) : savedRecordings.length === 0 ? (
+              <p className="export-progress-description">No saved recordings found. Record something first.</p>
+            ) : (
+              <>
+                <label className="export-resolution">
+                  <span>Recording</span>
+                  <Dropdown
+                    value={selectedRecordingId}
+                    aria-label="Recording to export"
+                    disabled={recordingBusy}
+                    onChange={(event) => setSelectedRecordingId(event.target.value)}
+                  >
+                    {savedRecordings.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {formatRecordingLabel(entry)}
+                      </option>
+                    ))}
+                  </Dropdown>
+                </label>
+                <p className="export-picker-summary">
+                  Will export {describeExportSelection(exportModes)} at {EXPORT_RESOLUTIONS[exportResolution].label}.
+                  Change this in Export/Record.
+                </p>
+              </>
+            )}
+            {exportPickerError && <p className="export-picker-error" role="alert">{exportPickerError}</p>}
+            <button
+              className="export-progress-close"
+              type="button"
+              disabled={recordingBusy || exportPickerLoading || !selectedRecordingId}
+              onClick={() => void startSelectedExport()}
+            >
+              Export
+            </button>
+          </section>
+        </div>
+      )}
       {exportDialogOpen && (postProcessingState === "PROCESSING" || exportsCompleted) && (
         <div className="export-progress-backdrop">
           <section

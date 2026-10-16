@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import type { StartRecordingRequest } from "@shared/types/media";
+import type { ExportRecordingRequest, StartRecordingRequest } from "@shared/types/media";
 import type { MediaCoreService } from "../services/media-core.service";
 import type { RecordingService } from "../services/recording.service";
 
@@ -8,6 +8,8 @@ export function registerMediaCoreIpc(mediaCore: MediaCoreService, recording: Rec
   ipcMain.handle("recording:start", (_event, request: StartRecordingRequest) => recording.start(request));
   ipcMain.handle("recording:stop", () => recording.stop());
   ipcMain.handle("recording:status", () => recording.getStatus());
+  ipcMain.handle("recording:list", () => recording.listRecordings());
+  ipcMain.handle("recording:export", (_event, request: ExportRecordingRequest) => recording.exportRecording(request));
   ipcMain.handle("recording:retry-export", () => recording.retryPostProcessing());
   ipcMain.handle("recording:cancel-export", () => recording.cancelPostProcessing());
 }

@@ -1,21 +1,25 @@
 import { app, systemPreferences } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { Readable } from "node:stream";
 import type {
   NativeCaptureDevice,
+  ExportRecordingRequest,
   PostProcessingState,
   RecordingExport,
   RecordingLayer,
   RecordingMode,
   RecordingResult,
   RecordingScene,
+  RecordingSummary,
   StartRecordingRequest,
 } from "@shared/types/media";
 import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS } from "@shared/constants/media.constants";
 import type { MediaCoreService } from "./media-core.service";
+
+const RECORDING_ID_PATTERN = /^recording-[0-9A-Za-z-]+$/;
 
 type FfmpegProcess = ChildProcessByStdio<null, null, Readable>;
 
@@ -253,6 +257,7 @@ export class RecordingService {
     if (!stopped.success) {
       throw new Error(stopped.error || "Synthetic recording could not be finalized.");
     }
+    await this.startExport(stopped);
     if (this.postProcessingPromise) {
       await this.postProcessingPromise;
     }
@@ -496,24 +501,133 @@ export class RecordingService {
       return this.withPostProcessing({ ...result, postProcessingState: "NOT_STARTED", exportPath: null });
     }
 
-    this.postProcessingState = "PROCESSING";
+    this.postProcessingState = "NOT_STARTED";
     this.postProcessingError = undefined;
-    this.projectMetadata.postProcessingStartedAt = new Date().toISOString();
     this.exportPaths = {};
+    this.exportStates = [];
+    this.exportPath = null;
+    this.projectMetadata.postProcessingStatus = this.postProcessingState;
+    try {
+      await this.writeProject();
+    } catch (error) {
+      return this.withPostProcessing({
+        ...result,
+        success: false,
+        state: "ERROR",
+        error: `Unable to save project metadata: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+    return this.withPostProcessing(result);
+  }
+
+  async listRecordings(): Promise<RecordingSummary[]> {
+    const root = this.recordingsRoot();
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    const summaries: RecordingSummary[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !RECORDING_ID_PATTERN.test(entry.name)) {
+        continue;
+      }
+      const directory = join(root, entry.name);
+      try {
+        const project = JSON.parse(await readFile(join(directory, "project.json"), "utf8")) as ProjectMetadata;
+        const source = project.recordingResult as RecordingResult | undefined;
+        if (!source?.success) {
+          continue;
+        }
+        await stat(join(directory, "master.mkv"));
+        summaries.push({
+          id: entry.name,
+          createdAt: typeof project.createdAt === "string" ? project.createdAt : "",
+          durationMs: source.durationMs,
+          fileSizeBytes: source.fileSizeBytes,
+          exported: project.postProcessingStatus === "COMPLETED",
+        });
+      } catch {
+        continue;
+      }
+    }
+    return summaries.sort((first, second) => second.id.localeCompare(first.id));
+  }
+
+  async exportRecording(request: ExportRecordingRequest): Promise<RecordingResult> {
+    if (this.active || this.startPromise) {
+      throw new Error("Stop the current recording before exporting.");
+    }
+    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
+      throw new Error("Another export is already in progress.");
+    }
+    const availableModes: RecordingMode[] = ["HORIZONTAL", "VERTICAL"];
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      throw new Error("Select a valid recording to export.");
+    }
+    if (!Array.isArray(request.exportModes)
+      || request.exportModes.length === 0
+      || request.exportModes.some((mode) => !availableModes.includes(mode))) {
+      throw new Error("Select at least one valid export layout.");
+    }
+    if (!(request.exportResolution in EXPORT_RESOLUTIONS)) {
+      throw new Error("Select a valid export resolution.");
+    }
+    const directory = join(this.recordingsRoot(), request.id);
+    let project: ProjectMetadata;
+    try {
+      project = JSON.parse(await readFile(join(directory, "project.json"), "utf8")) as ProjectMetadata;
+      await stat(join(directory, "master.mkv"));
+    } catch {
+      throw new Error("The selected recording's source files could not be found.");
+    }
+    const source = project.recordingResult as RecordingResult | undefined;
+    if (!source?.success) {
+      throw new Error("The selected recording has no finalized source to export.");
+    }
+
+    const exportModes = availableModes.filter((mode) => request.exportModes.includes(mode));
+    const canvas = (project.canvas && typeof project.canvas === "object" ? project.canvas : {}) as Record<string, unknown>;
+    project.canvas = {
+      ...canvas,
+      horizontal: EXPORT_RESOLUTIONS[request.exportResolution].horizontal,
+      vertical: EXPORT_RESOLUTIONS[request.exportResolution].vertical,
+      exportResolution: request.exportResolution,
+    };
+    project.exportModes = exportModes;
+    this.projectDirectory = directory;
+    this.projectFile = join(directory, "project.json");
+    this.projectMetadata = project;
+    this.finalizedResult = source;
+    this.stopResult = undefined;
+    this.selectedExportModes = exportModes;
+    return this.startExport(source);
+  }
+
+  private recordingsRoot(): string {
+    return join(app.getPath("videos"), "Babu Studio");
+  }
+
+  private async startExport(result: RecordingResult): Promise<RecordingResult> {
+    const projectMetadata = this.projectMetadata;
     const projectDirectory = this.projectDirectory;
-    if (!projectDirectory) {
+    if (!projectMetadata || !projectDirectory) {
       throw new Error("The recording project directory is unavailable.");
     }
+    this.postProcessingState = "PROCESSING";
+    this.postProcessingError = undefined;
+    projectMetadata.postProcessingStartedAt = new Date().toISOString();
+    projectMetadata.postProcessingError = null;
+    projectMetadata.postProcessingFailedAt = null;
+    this.exportPaths = {};
     this.exportStates = this.selectedExportModes.map((mode) => {
       const path = join(projectDirectory, "exports", mode === "HORIZONTAL" ? "horizontal.mp4" : "vertical.mp4");
       this.exportPaths[mode] = path;
       return { mode, path, state: "PENDING", progress: 0 };
     });
     this.exportPath = this.exportPaths[result.recordingMode] ?? this.exportStates[0]?.path ?? null;
-    this.projectMetadata.postProcessingStatus = this.postProcessingState;
-    this.projectMetadata.exportFiles = { ...this.exportPaths };
-    this.projectMetadata.exports = this.exportStates;
+    projectMetadata.status = "SOURCE_FINALIZED";
+    projectMetadata.postProcessingStatus = this.postProcessingState;
+    projectMetadata.exportFiles = { ...this.exportPaths };
+    projectMetadata.exports = this.exportStates;
     try {
+      await mkdir(join(projectDirectory, "exports"), { recursive: true });
       await this.writeProject();
     } catch (error) {
       await this.handlePostProcessingFailure(new Error(`Unable to save project metadata before export: ${error instanceof Error ? error.message : String(error)}`));
@@ -697,6 +811,7 @@ export class RecordingService {
       project.exports = this.exportStates;
       await this.writeProject();
       try {
+        await mkdir(dirname(exportEntry.path), { recursive: true });
         await this.renderLayout(
           result,
           exportEntry.mode,

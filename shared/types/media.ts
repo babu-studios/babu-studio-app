@@ -82,3 +82,17 @@ export type RecordingResult = {
   exportPaths?: Partial<Record<RecordingMode, string>>;
   exports?: RecordingExport[];
 };
+
+export type RecordingSummary = {
+  id: string;
+  createdAt: string;
+  durationMs: number;
+  fileSizeBytes: number;
+  exported: boolean;
+};
+
+export type ExportRecordingRequest = {
+  id: string;
+  exportModes: RecordingMode[];
+  exportResolution: "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p";
+};
