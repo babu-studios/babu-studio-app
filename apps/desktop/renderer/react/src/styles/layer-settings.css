@@ -78,12 +78,6 @@
   overflow-wrap: anywhere;
 }
 
-.layer-resolution-hint {
-  color: #7f868e;
-  font-size: 9px;
-  line-height: 1.4;
-}
-
 .layer-empty-state {
   margin: 2px 0;
   color: #7f868e;

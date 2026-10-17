@@ -3,7 +3,7 @@ import { DEFAULT_EXPORT_RESOLUTION, type ExportResolutionId } from "@shared/cons
 import type { RecordingMode } from "@shared/types/media";
 import type { StudioConfiguration } from "@shared/types/studio-config";
 import { DEFAULT_AUDIO_MIXER } from "@/features/studio/constants/audio";
-import { AUDIO_MIXER_STORAGE_KEY, LEGACY_AUDIO_MIXER_STORAGE_KEY, LEGACY_STUDIO_STATE_STORAGE_KEY, PORTRAIT_PLACEMENT_VERSION, STUDIO_STATE_STORAGE_KEY } from "@/features/studio/constants/storage";
+import { AUDIO_MIXER_STORAGE_KEY, PORTRAIT_PLACEMENT_VERSION, STUDIO_STATE_STORAGE_KEY } from "@/features/studio/constants/storage";
 import { loadAudioMixer, loadLegacyStoredValue, loadPersistedStudioState } from "@/features/studio/persistence/studio-state";
 import type { AudioTrack, OutputId, PersistedAudioMixer, Scene, SceneId, StudioLayer } from "@/features/studio/types/studio.types";
 import { isExportResolutionId } from "@/features/studio/utils/guards";
@@ -60,14 +60,8 @@ export function useStudioConfiguration(setInfoToast: Dispatch<SetStateAction<Inf
           portrait: configuration.preview.portrait,
         });
       } else {
-        const studioState = loadPersistedStudioState(loadLegacyStoredValue([
-          STUDIO_STATE_STORAGE_KEY,
-          LEGACY_STUDIO_STATE_STORAGE_KEY,
-        ]));
-        const audioMixer = loadAudioMixer(loadLegacyStoredValue([
-          AUDIO_MIXER_STORAGE_KEY,
-          LEGACY_AUDIO_MIXER_STORAGE_KEY,
-        ]));
+        const studioState = loadPersistedStudioState(loadLegacyStoredValue([STUDIO_STATE_STORAGE_KEY]));
+        const audioMixer = loadAudioMixer(loadLegacyStoredValue([AUDIO_MIXER_STORAGE_KEY]));
         setActiveScene(studioState.activeScene);
         setScenes(studioState.scenes);
         setLayersByScene(studioState.layersByScene);
