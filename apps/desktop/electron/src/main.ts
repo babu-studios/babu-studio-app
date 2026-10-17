@@ -186,7 +186,12 @@ app.on("before-quit", (event) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  // Packaged macOS apps stay alive after the last window closes; dev runs must not linger as orphans.
+  if (process.platform !== "darwin" || !app.isPackaged) {
     app.quit();
   }
 });
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => app.quit());
+}

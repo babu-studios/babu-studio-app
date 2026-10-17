@@ -1,7 +1,9 @@
 import type { ProcessSnapshot, SystemStats } from "@shared/types/system-stats";
 import { formatBytes, formatRate } from "./resource-format";
+import { ResourceAdvice } from "./ResourceAdvice";
 import { ResourcePopupSection } from "./ResourcePopupSection";
 import { ResourceProcessList } from "./ResourceProcessList";
+import { closableNames } from "./process-advice";
 
 type ResourcePopupProps = {
   stats: SystemStats;
@@ -54,6 +56,7 @@ export function ResourcePopup({ stats, processes, memoryPercent, diskPercent, di
           ]}
         />
       </div>
+      <ResourceAdvice names={[...closableNames(processes?.applications), ...closableNames(processes?.background)]} />
       <div className="resource-process-columns">
         <ResourceProcessList title="Top 10 running applications" hint="Apps you opened · CPU / memory" entries={processes?.applications} />
         <ResourceProcessList title="Top 10 background processes" hint="System and helper services · CPU / memory" entries={processes?.background} />

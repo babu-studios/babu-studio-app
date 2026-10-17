@@ -19,6 +19,7 @@ declare global {
       requestMicrophoneAccess(): Promise<boolean>;
       getSystemStats(): Promise<SystemStats>;
       getProcessSnapshot(): Promise<ProcessSnapshot>;
+      openActivityMonitor(): Promise<boolean>;
     };
   }
 }

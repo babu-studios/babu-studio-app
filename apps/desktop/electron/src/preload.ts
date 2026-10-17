@@ -18,4 +18,5 @@ contextBridge.exposeInMainWorld("babuStudio", {
   requestMicrophoneAccess: (): Promise<boolean> => ipcRenderer.invoke("microphone-capture:request-access"),
   getSystemStats: (): Promise<SystemStats> => ipcRenderer.invoke("system-stats:get"),
   getProcessSnapshot: (): Promise<ProcessSnapshot> => ipcRenderer.invoke("system-stats:get-processes"),
+  openActivityMonitor: (): Promise<boolean> => ipcRenderer.invoke("system-stats:open-activity-monitor"),
 });
