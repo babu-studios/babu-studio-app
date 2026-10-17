@@ -1,5 +1,11 @@
 import type { ExportRecordingRequest, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "./media";
 import type { ProcessSnapshot, SystemStats } from "./system-stats";
+import type {
+  YouTubeOAuthStatus,
+  YouTubeVideoCategory,
+  YouTubeVideoUploadChunkResult,
+  YouTubeVideoUploadMetadata,
+} from "./youtube";
 
 declare global {
   interface Window {
@@ -16,6 +22,17 @@ declare global {
       requestMicrophoneAccess(): Promise<boolean>;
       getSystemStats(): Promise<SystemStats>;
       getProcessSnapshot(): Promise<ProcessSnapshot>;
+      getYouTubeOAuthStatus(): Promise<YouTubeOAuthStatus>;
+      connectYouTubeAccount(): Promise<void>;
+      getYouTubeVideoCategories(): Promise<YouTubeVideoCategory[]>;
+      beginYouTubeVideoUpload(metadata: YouTubeVideoUploadMetadata): Promise<string>;
+      uploadYouTubeVideoChunk(
+        uploadId: string,
+        offset: number,
+        bytes: Uint8Array,
+        totalBytes: number,
+      ): Promise<YouTubeVideoUploadChunkResult>;
+      uploadYouTubeThumbnail(videoId: string, mimeType: string, bytes: Uint8Array): Promise<void>;
     };
   }
 }

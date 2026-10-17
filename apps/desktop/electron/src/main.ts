@@ -4,12 +4,15 @@ import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
 import { registerMediaAccessIpc } from "./ipc/media-access.ipc";
 import { registerSystemStatsIpc } from "./ipc/system-stats.ipc";
+import { registerYouTubeIpc } from "./ipc/youtube.ipc";
 import { MediaCoreService } from "./services/media-core.service";
 import { RecordingService } from "./services/recording.service";
+import { YouTubeApiService } from "./services/youtube-api.service";
 import { createMainWindow } from "./services/window.service";
 
 const mediaCore = new MediaCoreService();
 const recording = new RecordingService(mediaCore);
+const youtube = new YouTubeApiService();
 
 app.setName("Babu Studio");
 
@@ -52,6 +55,7 @@ app.whenReady().then(async () => {
   registerMediaCoreIpc(mediaCore, recording);
   registerMediaAccessIpc();
   registerSystemStatsIpc();
+  registerYouTubeIpc(youtube);
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
       ? details.securityOrigin ?? webContents.getURL()

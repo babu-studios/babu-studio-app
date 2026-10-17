@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { ProcessSnapshot, SystemStats } from "@shared/types/system-stats";
 import type { ExportRecordingRequest, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "@shared/types/media";
+import type {
+  YouTubeOAuthStatus,
+  YouTubeVideoCategory,
+  YouTubeVideoUploadChunkResult,
+  YouTubeVideoUploadMetadata,
+} from "@shared/types/youtube";
 
 contextBridge.exposeInMainWorld("babuStudio", {
   getMediaCoreStatus: (): Promise<MediaCoreStatus> => ipcRenderer.invoke("media-core:get-status"),
@@ -15,4 +21,18 @@ contextBridge.exposeInMainWorld("babuStudio", {
   requestMicrophoneAccess: (): Promise<boolean> => ipcRenderer.invoke("microphone-capture:request-access"),
   getSystemStats: (): Promise<SystemStats> => ipcRenderer.invoke("system-stats:get"),
   getProcessSnapshot: (): Promise<ProcessSnapshot> => ipcRenderer.invoke("system-stats:get-processes"),
+  getYouTubeOAuthStatus: (): Promise<YouTubeOAuthStatus> => ipcRenderer.invoke("youtube:get-oauth-status"),
+  connectYouTubeAccount: (): Promise<void> => ipcRenderer.invoke("youtube:connect-account"),
+  getYouTubeVideoCategories: (): Promise<YouTubeVideoCategory[]> => ipcRenderer.invoke("youtube:video-categories"),
+  beginYouTubeVideoUpload: (metadata: YouTubeVideoUploadMetadata): Promise<string> =>
+    ipcRenderer.invoke("youtube:begin-video-upload", metadata),
+  uploadYouTubeVideoChunk: (
+    uploadId: string,
+    offset: number,
+    bytes: Uint8Array,
+    totalBytes: number,
+  ): Promise<YouTubeVideoUploadChunkResult> =>
+    ipcRenderer.invoke("youtube:upload-video-chunk", uploadId, offset, bytes, totalBytes),
+  uploadYouTubeThumbnail: (videoId: string, mimeType: string, bytes: Uint8Array): Promise<void> =>
+    ipcRenderer.invoke("youtube:upload-thumbnail", videoId, mimeType, bytes),
 });

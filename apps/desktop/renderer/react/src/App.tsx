@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS, type ExportResolutionId } from "@shared/constants/media.constants";
 import { Dropdown } from "./components/common/Dropdown";
 import { IconButton } from "./components/common/IconButton";
+import { MediaPage } from "./components/media/MediaPage";
 import { ResourceMonitor } from "./components/system/ResourceMonitor";
 import type { PostProcessingState, RecordingExport, RecordingMode, RecordingScene, RecordingSummary } from "@shared/types/media";
 
@@ -25,6 +26,8 @@ type IconName =
   | "record"
   | "stream"
   | "settings"
+  | "studio"
+  | "media"
   | "landscape"
   | "portrait"
   | "layers"
@@ -640,6 +643,18 @@ function Icon({ name, className = "" }: { name: IconName; className?: string }) 
         <circle cx="12" cy="12" r="3" />
       </>
     ),
+    studio: (
+      <>
+        <rect x="3" y="4" width="18" height="13" rx="2" />
+        <path d="M8 21h8M12 17v4" />
+      </>
+    ),
+    media: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="m10 8 6 4-6 4V8Z" />
+      </>
+    ),
     landscape: <rect x="3.5" y="5.5" width="17" height="13" rx="2" />,
     portrait: <rect x="7" y="3" width="10" height="18" rx="2" />,
     layers: (
@@ -1102,6 +1117,9 @@ function OutputPreview({
 }
 
 export default function App() {
+  const [currentPage, setCurrentPage] = useState<"studio" | "media">("studio");
+  const [pageMenuOpen, setPageMenuOpen] = useState(false);
+  const pageMenuRef = useRef<HTMLDivElement>(null);
   const [initialStudioState] = useState(loadPersistedStudioState);
   const [activeScene, setActiveScene] = useState<SceneId | null>(initialStudioState.activeScene);
   const [scenes, setScenes] = useState<Scene[]>(initialStudioState.scenes);
@@ -1150,6 +1168,28 @@ export default function App() {
     ? estimateExportBytes(selectedRecordingSummary.durationMs, exportModes, exportResolution)
     : 0;
   const exportDiskShort = exportFreeBytes !== null && estimatedExportBytes > exportFreeBytes;
+  useEffect(() => {
+    if (!pageMenuOpen) {
+      return undefined;
+    }
+    const closeOnPointerDown = (event: MouseEvent) => {
+      if (event.target instanceof Node && !pageMenuRef.current?.contains(event.target)) {
+        setPageMenuOpen(false);
+      }
+    };
+    const closeOnKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPageMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnKeyDown);
+    };
+  }, [pageMenuOpen]);
+
   useEffect(() => {
     if (!exportPickerOpen) {
       return;
@@ -2455,56 +2495,95 @@ export default function App() {
                   </div>
         </div>
         <div className="topbar-actions">
-          <ResourceMonitor />
-          <button
-            className="action-button action-button--export"
-            disabled={recordingBusy || recordingActive || postProcessingState === "PROCESSING"}
-            title="Choose a saved recording to export"
-            onClick={() => void openExportPicker()}
-          >
-            <Icon name="export" />
-            Export
-          </button>
-          <button
-            className={`action-button action-button--record${recordingActive ? " action-button--recording" : ""}`}
-            disabled={recordingBusy || postProcessingState === "PROCESSING"}
-            title={recordingActive
-              ? "Stop the current recording"
-              : `Record the shared scene`}
-            onClick={() => {
-              if (recordingActive) {
-                void stopRecording();
-              } else {
-                void startRecording();
-              }
-            }}
-          >
-            <Icon name="record" />
-            {recordingActive ? "Stop Recording" : "Start Recording"}
-          </button>
-          {(isRecordingActive || (
-            recordingNotice
-            && !recordingNotice.error
-            && postProcessingState !== "PROCESSING"
-            && postProcessingState !== "COMPLETED"
-          )) && (
-            <div className="recording-inline-status" aria-live="polite">
-              {isRecordingActive && (
-                <strong className="recording-timer">{formatRecordingTime(recordingElapsedMs)}</strong>
-              )}
-              {recordingNotice
+          {currentPage === "studio" && (
+            <>
+              <ResourceMonitor />
+              <button
+                className="action-button action-button--export"
+                disabled={recordingBusy || recordingActive || postProcessingState === "PROCESSING"}
+                title="Choose a saved recording to export"
+                onClick={() => void openExportPicker()}
+              >
+                <Icon name="export" />
+                Export
+              </button>
+              <button
+                className={`action-button action-button--record${recordingActive ? " action-button--recording" : ""}`}
+                disabled={recordingBusy || postProcessingState === "PROCESSING"}
+                title={recordingActive
+                  ? "Stop the current recording"
+                  : `Record the shared scene`}
+                onClick={() => {
+                  if (recordingActive) {
+                    void stopRecording();
+                  } else {
+                    void startRecording();
+                  }
+                }}
+              >
+                <Icon name="record" />
+                {recordingActive ? "Stop Recording" : "Start Recording"}
+              </button>
+              {(isRecordingActive || (
+                recordingNotice
                 && !recordingNotice.error
                 && postProcessingState !== "PROCESSING"
-                && postProcessingState !== "COMPLETED" && (
-                <span className="record-notice">
-                  {recordingNotice.text}
-                </span>
+                && postProcessingState !== "COMPLETED"
+              )) && (
+                <div className="recording-inline-status" aria-live="polite">
+                  {isRecordingActive && (
+                    <strong className="recording-timer">{formatRecordingTime(recordingElapsedMs)}</strong>
+                  )}
+                  {recordingNotice
+                    && !recordingNotice.error
+                    && postProcessingState !== "PROCESSING"
+                    && postProcessingState !== "COMPLETED" && (
+                    <span className="record-notice">
+                      {recordingNotice.text}
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
+          <div className="page-menu" ref={pageMenuRef}>
+            <button
+              className={`page-menu-trigger${pageMenuOpen ? " page-menu-trigger--open" : ""}`}
+              type="button"
+              aria-label="Open page menu"
+              aria-haspopup="menu"
+              aria-expanded={pageMenuOpen}
+              title="Switch page"
+              onClick={() => setPageMenuOpen((open) => !open)}
+            >
+              <Icon name="settings" />
+            </button>
+            {pageMenuOpen && (
+              <div className="page-menu-popup" role="menu" aria-label="Pages">
+                {(["studio", "media"] as const).map((page) => (
+                  <button
+                    className={`page-menu-item${currentPage === page ? " page-menu-item--active" : ""}`}
+                    key={page}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={currentPage === page}
+                    onClick={() => {
+                      setCurrentPage(page);
+                      setPageMenuOpen(false);
+                    }}
+                  >
+                    <Icon name={page} />
+                    {page === "studio" ? "Studio" : "Media"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
+      {currentPage === "studio" ? (
+        <>
       {infoToast && (
         <div className={`info-toast info-toast--${infoToast.tone}`} role="status">
           <span>{infoToast.text}</span>
@@ -3481,6 +3560,10 @@ export default function App() {
             )}
           </section>
         </div>
+      )}
+        </>
+      ) : (
+        <MediaPage />
       )}
     </main>
   );
