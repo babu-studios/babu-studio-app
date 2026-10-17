@@ -977,13 +977,12 @@ export class RecordingService {
     };
     let audioOutputLabel: string | undefined;
     if (gameAudio && microphone) {
-      graph.push(`${alignAudioTrack(gameAudio)},volume=${gainFor(gameAudio)}[gameAudio]`);
+      // No ducking: game audio keeps a constant level; voice is louder on top of it.
+      graph.push(`${alignAudioTrack(gameAudio)},volume=${(Number(gainFor(gameAudio)) * 0.8).toFixed(4)}[gameAudio]`);
       graph.push(
-        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4[voice]`,
+        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4,volume=1.5[voice]`,
       );
-      graph.push("[voice]asplit=2[voiceSidechain][voiceMix]");
-      graph.push("[gameAudio][voiceSidechain]sidechaincompress=threshold=0.01:ratio=12:attack=10:release=400[duckedGame]");
-      graph.push("[duckedGame][voiceMix]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95[mixedAudio]");
+      graph.push("[gameAudio][voice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:attack=5:release=250[mixedAudio]");
       audioOutputLabel = "[mixedAudio]";
     } else if (microphone) {
       graph.push(

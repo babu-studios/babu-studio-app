@@ -24,6 +24,7 @@ struct RecordingConfig {
   int fps = 60;
   int capture_width = 1920;
   int capture_height = 1080;
+  bool capture_exact_size = true;  // false lets non-capture-card sources use the closest supported size
   int webcam_width = 1280;
   int webcam_height = 720;
   int webcam_fps = 30;

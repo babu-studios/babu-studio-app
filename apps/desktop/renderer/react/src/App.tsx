@@ -81,7 +81,6 @@ export default function App() {
         <RecordingControls
           recordingActive={recording.recordingActive}
           recordingBusy={recording.recordingBusy}
-          recordingNotice={recording.recordingNotice}
           recordingElapsedMs={recording.recordingElapsedMs}
           postProcessingState={recording.postProcessingState}
           onOpenExport={() => void exportFlow.openExportPicker()}

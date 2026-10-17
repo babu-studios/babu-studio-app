@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PostProcessingState } from "@shared/types/media";
 import type { RecordingNotice } from "./useRecordingState";
 
@@ -7,6 +7,20 @@ export type InfoToast = { text: string; tone: "success" | "error" };
 export function useToasts(recordingNotice: RecordingNotice | null, postProcessingState: PostProcessingState) {
   const [infoToast, setInfoToast] = useState<InfoToast | null>(null);
   const [recordingErrorToast, setRecordingErrorToast] = useState<string | null>(null);
+
+  const toastedNoticeRef = useRef<RecordingNotice | null>(null);
+
+  // Success notices (e.g. "Saved 24.6s…") are shown as toasts instead of inline text.
+  useEffect(() => {
+    if (!recordingNotice || recordingNotice.error || toastedNoticeRef.current === recordingNotice) {
+      return;
+    }
+    if (postProcessingState === "PROCESSING" || postProcessingState === "COMPLETED") {
+      return;
+    }
+    toastedNoticeRef.current = recordingNotice;
+    setInfoToast({ text: recordingNotice.text, tone: "success" });
+  }, [recordingNotice, postProcessingState]);
 
   useEffect(() => {
     if (!infoToast) {

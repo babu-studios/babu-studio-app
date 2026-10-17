@@ -39,10 +39,10 @@ export function resolveRecordingSources(
   const cameraNames = namesForSource("camera-device");
   if ((captureLayers.length > 0 && captureNames.length === 0)
     || (cameraLayers.length > 0 && cameraNames.length === 0)) {
-    return { error: "A selected capture card or camera is unavailable. Reload the device list or choose another device." };
+    return { error: "Capture card or camera unavailable. Reload devices or pick another." };
   }
   if (captureNames.length > 1 || cameraNames.length > 1) {
-    return { error: "The shared scene must use only one capture card and one camera for a synchronized recording." };
+    return { error: "Use only one capture card and one camera per scene." };
   }
   return { sources: { captureLayers, captureNames, cameraNames } };
 }

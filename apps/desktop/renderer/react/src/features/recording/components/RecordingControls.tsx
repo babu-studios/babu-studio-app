@@ -1,12 +1,10 @@
 import { Icon } from "@/components/common/Icon";
 import { formatRecordingTime } from "@/features/studio/utils/recording-format";
 import type { PostProcessingState } from "@shared/types/media";
-import type { RecordingNotice } from "../hooks/useRecordingState";
 
 type RecordingControlsProps = {
   recordingActive: boolean;
   recordingBusy: boolean;
-  recordingNotice: RecordingNotice | null;
   recordingElapsedMs: number;
   postProcessingState: PostProcessingState;
   onOpenExport: () => void;
@@ -17,7 +15,6 @@ type RecordingControlsProps = {
 export function RecordingControls({
   recordingActive,
   recordingBusy,
-  recordingNotice,
   recordingElapsedMs,
   postProcessingState,
   onOpenExport,
@@ -25,10 +22,6 @@ export function RecordingControls({
   onStop,
 }: RecordingControlsProps) {
   const exporting = postProcessingState === "PROCESSING";
-  const showNotice = Boolean(
-    recordingNotice && !recordingNotice.error && !exporting && postProcessingState !== "COMPLETED",
-  );
-
   return (
     <>
       <button
@@ -48,13 +41,10 @@ export function RecordingControls({
       >
         <Icon name="record" />
         {recordingActive ? "Stop Recording" : "Start Recording"}
+        {recordingActive && (
+          <span className="recording-timer" aria-live="off">{formatRecordingTime(recordingElapsedMs)}</span>
+        )}
       </button>
-      {(recordingActive || showNotice) && (
-        <div className="recording-inline-status" aria-live="polite">
-          {recordingActive && <strong className="recording-timer">{formatRecordingTime(recordingElapsedMs)}</strong>}
-          {showNotice && recordingNotice && <span className="record-notice">{recordingNotice.text}</span>}
-        </div>
-      )}
     </>
   );
 }

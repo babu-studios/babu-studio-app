@@ -59,6 +59,7 @@ export type StartRecordingRequest = {
   microphoneEnabled?: boolean;
   captureWidth?: number;
   captureHeight?: number;
+  captureExactSize?: boolean;
   exportModes?: RecordingMode[];
   exportResolution?: "360p" | "480p" | "720p" | "1080p" | "1440p" | "2160p";
   scene: RecordingScene;

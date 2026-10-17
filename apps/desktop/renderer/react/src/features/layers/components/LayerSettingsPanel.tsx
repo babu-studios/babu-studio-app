@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Dropdown } from "@/components/common/Dropdown";
 import { CAPTURE_RESOLUTIONS, DEVICE_OPTIONS, LAYER_SOURCE_LABELS } from "@/features/studio/constants/layers";
 import type { LayerSidebarProps } from "@/features/studio/components/sidebar.types";
 import type { StudioLayer } from "@/features/studio/types/studio.types";
 import { isCaptureResolutionId } from "@/features/studio/utils/guards";
+import { useSupportedResolutions } from "../hooks/useSupportedResolutions";
 import { LayerCropControls } from "./LayerCropControls";
 
 type LayerSettingsPanelProps = Pick<
@@ -40,6 +42,23 @@ export function LayerSettingsPanel({
   const emptyOptionLabel = !isVideoSource
     ? "Select a device"
     : videoInputLoading ? "Device" : videoInputDevices.length ? "Select a video input" : "No video inputs found";
+  const supportedIds = useSupportedResolutions(layer.deviceId, isVideoSource && !isRecordingActive);
+  const resolutionOptions = supportedIds
+    ? CAPTURE_RESOLUTIONS.filter((resolution) => supportedIds.includes(resolution.id))
+    : CAPTURE_RESOLUTIONS;
+
+  // Move off a resolution the device cannot capture to the best one it supports.
+  useEffect(() => {
+    if (!supportedIds || supportedIds.includes(layer.captureResolution) || isRecordingActive) {
+      return;
+    }
+    const best = resolutionOptions[resolutionOptions.length - 1];
+    if (best) {
+      void changeLayerCaptureResolution(sceneId, layer, best.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportedIds, layer.captureResolution, layer.deviceId]);
+
   const deviceOptions = isVideoSource ? videoInputDevices : DEVICE_OPTIONS[layer.kind];
 
   return createPortal(
@@ -99,7 +118,7 @@ export function LayerSettingsPanel({
               }
             }}
           >
-            {CAPTURE_RESOLUTIONS.map((resolution) => (
+            {resolutionOptions.map((resolution) => (
               <option key={resolution.id} value={resolution.id}>
                 {resolution.label} ({resolution.width} × {resolution.height})
               </option>

@@ -22,43 +22,31 @@ export function Toasts({
   onRetryExport,
 }: ToastsProps) {
   return (
-    <>
-    {infoToast && (
-      <div className={`info-toast info-toast--${infoToast.tone}`} role="status">
-        <span>{infoToast.text}</span>
-        <button
-          type="button"
-          aria-label="Dismiss message"
-          onClick={onDismissInfo}
-        >
-          <Icon name="close" />
-        </button>
-      </div>
-    )}
-
-    {recordingErrorToast && (
-      <div className="recording-error-toast" role="alert">
-        <span className="recording-error-toast-icon" aria-hidden="true">!</span>
-        <p className="recording-error-toast-message">{recordingErrorToast}</p>
-        {postProcessingState === "ERROR" ? (
-          <button
-            className="recording-error-toast-action"
-            disabled={recordingBusy}
-            onClick={onRetryExport}
-          >
-            Retry export
+    <div className="toast-stack">
+      {infoToast && (
+        <div className={`toast toast--${infoToast.tone}`} role="status">
+          <span className="toast-icon" aria-hidden="true">{infoToast.tone === "success" ? "✓" : "!"}</span>
+          <p className="toast-message">{infoToast.text}</p>
+          <button className="toast-close" type="button" aria-label="Dismiss message" onClick={onDismissInfo}>
+            <Icon name="close" />
           </button>
-        ) : (
-          <button
-            className="recording-error-toast-dismiss"
-            aria-label="Dismiss error message"
-            onClick={onDismissError}
-          >
-            ×
-          </button>
-        )}
-      </div>
-    )}
-    </>
+        </div>
+      )}
+      {recordingErrorToast && (
+        <div className="toast toast--error" role="alert">
+          <span className="toast-icon" aria-hidden="true">!</span>
+          <p className="toast-message">{recordingErrorToast}</p>
+          {postProcessingState === "ERROR" ? (
+            <button className="toast-action" type="button" disabled={recordingBusy} onClick={onRetryExport}>
+              Retry export
+            </button>
+          ) : (
+            <button className="toast-close" type="button" aria-label="Dismiss error message" onClick={onDismissError}>
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import { getCaptureResolution } from "@/features/studio/utils/crop";
-import { findAudioDeviceByName, findBuiltInMicrophone, normalizeAudioDeviceName } from "@/features/studio/utils/devices";
+import { findAudioDeviceByName, findBuiltInMicrophone, isSupportedCaptureCard, normalizeAudioDeviceName } from "@/features/studio/utils/devices";
 import type { useStudioConfiguration } from "@/features/studio/hooks/useStudioConfiguration";
 import type { RecordingScene } from "@shared/types/media";
 import type { Scene, StudioLayer, DeviceOption } from "@/features/studio/types/studio.types";
@@ -119,6 +119,7 @@ export function useRecordingSession({
         microphoneEnabled: Boolean(micTrack && !micTrack.muted),
         captureWidth: captureSize?.width,
         captureHeight: captureSize?.height,
+        captureExactSize: videoInputDevices.some((device) => device.name === captureNames[0] && isSupportedCaptureCard(device)),
         mode: "HORIZONTAL",
         exportModes,
         exportResolution,
