@@ -3,6 +3,7 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { powerGuard } from "./power-guard.service";
 import type { Readable } from "node:stream";
 import type {
   NativeCaptureDevice,
@@ -130,6 +131,7 @@ function runFfmpeg(
 ): Promise<void> {
   const ffmpegPath = process.env.BABU_STUDIO_FFMPEG_PATH || "ffmpeg";
   return new Promise((resolve, reject) => {
+    const releasePowerGuard = powerGuard.acquire();
     const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
     onSpawn(child);
     let stderr = "";
@@ -150,8 +152,12 @@ function runFfmpeg(
         }
       }
     });
-    child.once("error", reject);
+    child.once("error", (error) => {
+      releasePowerGuard();
+      reject(error);
+    });
     child.once("close", (code, signal) => {
+      releasePowerGuard();
       onClose(child);
       if (code === 0) {
         resolve();
@@ -162,11 +168,16 @@ function runFfmpeg(
   });
 }
 
+// Custom extensions so the OS has no app to open these internal files.
+const MASTER_FILE = "master.babu";
+const PROJECT_FILE = "project.babu";
+
 export class RecordingService {
   private projectFile?: string;
   private projectDirectory?: string;
   private projectMetadata?: ProjectMetadata;
-  private active = false;
+  private activeState = false;
+  private releaseRecordingPowerGuard?: () => void;
   private startPromise?: Promise<RecordingResult>;
   private stopPromise?: Promise<RecordingResult>;
   private retryPromise?: Promise<RecordingResult>;
@@ -184,6 +195,21 @@ export class RecordingService {
   private selectedExportModes: RecordingMode[] = ["HORIZONTAL", "VERTICAL"];
 
   constructor(private readonly mediaCore: MediaCoreService) {}
+
+  private get active(): boolean {
+    return this.activeState;
+  }
+
+  // Keep the system awake for the whole recording; sleeping pauses capture and truncates the file.
+  private set active(value: boolean) {
+    this.activeState = value;
+    if (value && !this.releaseRecordingPowerGuard) {
+      this.releaseRecordingPowerGuard = powerGuard.acquire();
+    } else if (!value) {
+      this.releaseRecordingPowerGuard?.();
+      this.releaseRecordingPowerGuard = undefined;
+    }
+  }
 
   async start(request: StartRecordingRequest): Promise<RecordingResult> {
     return this.startWithOptions(request, {});
@@ -329,7 +355,7 @@ export class RecordingService {
         ?? join(app.getPath("videos"), "Babu Studio", `recording-${recordingId}`);
       await mkdir(join(directory, "exports"), { recursive: true });
       this.projectDirectory = directory;
-      this.projectFile = join(directory, "project.json");
+      this.projectFile = join(directory, PROJECT_FILE);
       this.postProcessingState = "NOT_STARTED";
       this.selectedExportModes = request.exportModes ?? ["HORIZONTAL", "VERTICAL"];
       this.exportPath = null;
@@ -352,7 +378,7 @@ export class RecordingService {
           fps: request.fps,
         },
         sources: {
-          master: "master.mkv",
+          master: MASTER_FILE,
           videoTracks: [],
           audioTracks: [],
           timestamps: {
@@ -479,7 +505,7 @@ export class RecordingService {
     this.projectMetadata.stoppedAt = new Date().toISOString();
     this.projectMetadata.status = result.success ? "SOURCE_FINALIZED" : "ERROR";
     this.projectMetadata.sources = {
-      master: "master.mkv",
+      master: MASTER_FILE,
       videoTracks: result.videoTracks,
       audioTracks: result.audioTracks,
       timestamps: {
@@ -530,12 +556,12 @@ export class RecordingService {
       }
       const directory = join(root, entry.name);
       try {
-        const project = JSON.parse(await readFile(join(directory, "project.json"), "utf8")) as ProjectMetadata;
+        const project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
         const source = project.recordingResult as RecordingResult | undefined;
         if (!source?.success) {
           continue;
         }
-        await stat(join(directory, "master.mkv"));
+        await stat(join(directory, MASTER_FILE));
         summaries.push({
           id: entry.name,
           createdAt: typeof project.createdAt === "string" ? project.createdAt : "",
@@ -572,8 +598,8 @@ export class RecordingService {
     const directory = join(this.recordingsRoot(), request.id);
     let project: ProjectMetadata;
     try {
-      project = JSON.parse(await readFile(join(directory, "project.json"), "utf8")) as ProjectMetadata;
-      await stat(join(directory, "master.mkv"));
+      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
+      await stat(join(directory, MASTER_FILE));
     } catch {
       throw new Error("The selected recording's source files could not be found.");
     }
@@ -592,7 +618,7 @@ export class RecordingService {
     };
     project.exportModes = exportModes;
     this.projectDirectory = directory;
-    this.projectFile = join(directory, "project.json");
+    this.projectFile = join(directory, PROJECT_FILE);
     this.projectMetadata = project;
     this.finalizedResult = source;
     this.stopResult = undefined;
@@ -754,8 +780,11 @@ export class RecordingService {
 
   private launchPostProcessing(result: RecordingResult): void {
     this.postProcessingCancelled = false;
+    // Hold the guard from launch until every export (and failure handling) has finished.
+    const releasePowerGuard = powerGuard.acquire();
     this.postProcessingPromise = this.postProcess(result)
-      .catch((error: unknown) => this.handlePostProcessingFailure(error));
+      .catch((error: unknown) => this.handlePostProcessingFailure(error))
+      .finally(releasePowerGuard);
   }
 
   private async handlePostProcessingFailure(error: unknown): Promise<void> {
@@ -939,7 +968,7 @@ export class RecordingService {
       "-progress", "pipe:2",
       "-nostats",
       "-y",
-      "-i", join(projectDirectory, "master.mkv"),
+      "-i", join(projectDirectory, MASTER_FILE),
     ];
     const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
     const microphone = audioLayers.find((track) => track.trackName === "Microphone");
@@ -952,13 +981,12 @@ export class RecordingService {
     };
     let audioOutputLabel: string | undefined;
     if (gameAudio && microphone) {
-      graph.push(`${alignAudioTrack(gameAudio)},volume=${gainFor(gameAudio)}[gameAudio]`);
+      // No ducking: game audio keeps a constant level; voice is louder on top of it.
+      graph.push(`${alignAudioTrack(gameAudio)},volume=${(Number(gainFor(gameAudio)) * 0.8).toFixed(4)}[gameAudio]`);
       graph.push(
-        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4[voice]`,
+        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4,volume=1.5[voice]`,
       );
-      graph.push("[voice]asplit=2[voiceSidechain][voiceMix]");
-      graph.push("[gameAudio][voiceSidechain]sidechaincompress=threshold=0.01:ratio=12:attack=10:release=400[duckedGame]");
-      graph.push("[duckedGame][voiceMix]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95[mixedAudio]");
+      graph.push("[gameAudio][voice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:attack=5:release=250[mixedAudio]");
       audioOutputLabel = "[mixedAudio]";
     } else if (microphone) {
       graph.push(

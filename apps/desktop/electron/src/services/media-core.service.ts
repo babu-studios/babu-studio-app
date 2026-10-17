@@ -84,7 +84,7 @@ export class MediaCoreService {
       `gameVolume=${request.gameVolume}`,
       `microphoneVolume=${request.microphoneVolume}`,
       `outputDir=${outputDir}`,
-      "fileName=master.mkv",
+      "fileName=master.babu",
       ...(synthetic ? ["synthetic=1"] : []),
     ];
     const clean = (value: string) => value.replace(/[\t\r\n]/g, " ");
@@ -96,6 +96,7 @@ export class MediaCoreService {
       ["microphoneEnabled", request.microphoneEnabled === undefined ? undefined : request.microphoneEnabled ? 1 : 0],
       ["captureWidth", request.captureWidth],
       ["captureHeight", request.captureHeight],
+      ["captureExactSize", request.captureExactSize === undefined ? undefined : request.captureExactSize ? 1 : 0],
     ];
     for (const [key, value] of optional) {
       if (value !== undefined && value !== "") {

@@ -35,6 +35,7 @@ export default defineConfig({
     resolve: {
       alias: {
         "@shared": resolve(__dirname, "../../../shared"),
+        "@": resolve(__dirname, "../renderer/react/src"),
       },
     },
     build: {

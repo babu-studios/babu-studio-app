@@ -11,10 +11,22 @@ apps/
       react/
         src/
           components/
-            common/       # Shared Dropdown and IconButton components
-          App.tsx
+            common/       # Reusable UI: Dropdown, IconButton, Icon
+            layout/       # Brand, Topbar
+            system/       # ResourceMonitor and its parts
+          hooks/          # Generic hooks (outside-click dismiss, popup position, polling)
+          features/       # One folder per feature, each with components/ hooks/ utils/ types/
+            studio/       # Shared types, constants, utils, persisted configuration
+            preview/      # Canvas workspace, layer interaction
+            layers/       # Layer list, settings, device connection
+            scenes/       # Scene list and state
+            audio/        # Mixer, meters, device popups
+            recording/    # Controls, session, polling, toasts
+            export/       # Picker and progress dialogs
+          styles/         # Per-feature CSS, imported by styles/index.css
+          App.tsx         # Thin composition root
           main.tsx
-          styles.css
+          # "@/" aliases src/
 core/
   include/creator/core/   # Shared media-core interfaces
   src/

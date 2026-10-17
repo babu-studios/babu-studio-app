@@ -77,7 +77,11 @@ async function main() {
   const outputDirectory = await mkdtemp(join(tmpdir(), "babu-studio-recording-flow-"));
   let succeeded = false;
   try {
-    const child = spawn(electronBinary, [mainEntry], {
+    // Keep the Mac awake: sleeping pauses the media clock and truncates long recordings.
+    const [command, commandArgs] = process.platform === "darwin"
+      ? ["caffeinate", ["-dimsu", electronBinary, mainEntry]]
+      : [electronBinary, [mainEntry]];
+    const child = spawn(command, commandArgs, {
       cwd: repositoryRoot,
       env: {
         ...process.env,
@@ -152,7 +156,7 @@ async function main() {
       || Number(masterInfo.format?.duration) < durationMs / 1000 * 0.95) {
       fail("The finalized master recording is empty or shorter than expected.");
     }
-    const project = JSON.parse(await readFile(join(outputDirectory, "project.json"), "utf8"));
+    const project = JSON.parse(await readFile(join(outputDirectory, "project.babu"), "utf8"));
     if (project.exportModes?.join(",") !== exportModes.join(",")
       || project.exports.length !== exportModes.length
       || project.exports.some((entry) => entry.state !== "COMPLETED")) {

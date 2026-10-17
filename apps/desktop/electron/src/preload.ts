@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { ProcessSnapshot, SystemStats } from "@shared/types/system-stats";
 import type { ExportRecordingRequest, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "@shared/types/media";
+import type { StudioConfiguration } from "@shared/types/studio-config";
 
 contextBridge.exposeInMainWorld("babuStudio", {
+  loadStudioConfig: (): Promise<StudioConfiguration | null> => ipcRenderer.invoke("studio-config:load"),
+  saveStudioConfig: (configuration: StudioConfiguration): Promise<void> => ipcRenderer.invoke("studio-config:save", configuration),
   getMediaCoreStatus: (): Promise<MediaCoreStatus> => ipcRenderer.invoke("media-core:get-status"),
   startRecording: (request: StartRecordingRequest): Promise<RecordingResult> => ipcRenderer.invoke("recording:start", request),
   stopRecording: (): Promise<RecordingResult> => ipcRenderer.invoke("recording:stop"),
@@ -15,4 +18,5 @@ contextBridge.exposeInMainWorld("babuStudio", {
   requestMicrophoneAccess: (): Promise<boolean> => ipcRenderer.invoke("microphone-capture:request-access"),
   getSystemStats: (): Promise<SystemStats> => ipcRenderer.invoke("system-stats:get"),
   getProcessSnapshot: (): Promise<ProcessSnapshot> => ipcRenderer.invoke("system-stats:get-processes"),
+  openActivityMonitor: (): Promise<boolean> => ipcRenderer.invoke("system-stats:open-activity-monitor"),
 });

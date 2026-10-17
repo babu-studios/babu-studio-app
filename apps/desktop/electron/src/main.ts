@@ -1,40 +1,18 @@
 import { app, BrowserWindow, dialog, session, systemPreferences } from "electron";
-import { cpSync, existsSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
 import { registerMediaAccessIpc } from "./ipc/media-access.ipc";
 import { registerSystemStatsIpc } from "./ipc/system-stats.ipc";
 import { MediaCoreService } from "./services/media-core.service";
 import { RecordingService } from "./services/recording.service";
+import { registerStudioConfigIpc } from "./ipc/studio-config.ipc";
+import { StudioConfigService } from "./services/studio-config.service";
 import { createMainWindow } from "./services/window.service";
 
 const mediaCore = new MediaCoreService();
 const recording = new RecordingService(mediaCore);
 
 app.setName("Babu Studio");
-
-// The app was renamed from "DUI Studio"; carry saved scenes, layers and settings over once.
-function migrateLegacyUserData(): void {
-  try {
-    const current = app.getPath("userData");
-    const legacy = join(app.getPath("appData"), "DUI Studio");
-    const marker = join(current, ".migrated-from-dui-studio");
-    if (existsSync(marker) || !existsSync(legacy)) {
-      return;
-    }
-    for (const entry of ["Local Storage", "IndexedDB", "Preferences"]) {
-      const source = join(legacy, entry);
-      if (existsSync(source)) {
-        cpSync(source, join(current, entry), { recursive: true, force: true });
-      }
-    }
-    writeFileSync(marker, "migrated");
-  } catch (error) {
-    console.error("Could not migrate saved data from DUI Studio.", error);
-  }
-}
-
-migrateLegacyUserData();
 
 function getMediaCorePath(): string {
   const configuredPath = process.env.BABU_STUDIO_MEDIA_CORE_PATH;
@@ -52,6 +30,7 @@ app.whenReady().then(async () => {
   registerMediaCoreIpc(mediaCore, recording);
   registerMediaAccessIpc();
   registerSystemStatsIpc();
+  registerStudioConfigIpc(new StudioConfigService(join(app.getPath("userData"), "studio-config.json")));
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
       ? details.securityOrigin ?? webContents.getURL()
@@ -183,7 +162,12 @@ app.on("before-quit", (event) => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  // Packaged macOS apps stay alive after the last window closes; dev runs must not linger as orphans.
+  if (process.platform !== "darwin" || !app.isPackaged) {
     app.quit();
   }
 });
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => app.quit());
+}

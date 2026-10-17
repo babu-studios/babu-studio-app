@@ -109,6 +109,7 @@ RecordingConfig parse_config(const std::map<std::string, std::string>& fields) {
   config.synthetic = field_or(fields, "synthetic", 0, to_int) != 0;
   config.capture_width = field_or(fields, "captureWidth", 1920, to_int);
   config.capture_height = field_or(fields, "captureHeight", 1080, to_int);
+  config.capture_exact_size = field_or(fields, "captureExactSize", 1, to_int) != 0;
   config.output_directory = field_or<std::string>(fields, "outputDir", "", [](const std::string& v) { return v; });
   config.master_file_name = field_or<std::string>(fields, "fileName", "master.mkv", [](const std::string& v) { return v; });
 

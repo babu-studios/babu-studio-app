@@ -1,0 +1,128 @@
+.studio-app {
+  width: 100vw;
+  height: 100vh;
+  min-width: 960px;
+  min-height: 640px;
+  overflow: hidden;
+  background: #111316;
+}
+
+.studio-layout {
+  display: grid;
+  width: 100%;
+  height: calc(100vh - 66px);
+  min-height: 574px;
+  grid-template-columns: 324px minmax(0, 1fr);
+}
+
+.canvas-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  padding: 20px 24px;
+  border-left: 1px solid #292c31;
+}
+
+.inspector-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-kicker {
+  color: #7d838b;
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.14em;
+}
+
+.inspector-heading h2 {
+  margin: 5px 0 0;
+  color: #eff1f3;
+  font-size: 18px;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.inspector {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  border-right: 1px solid #292c31;
+  background: #17191d;
+}
+
+.inspector-heading {
+  min-height: 76px;
+  flex: 0 0 auto;
+  padding: 16px 18px;
+  border-bottom: 1px solid #2b2e33;
+}
+
+.inspector-heading h2 {
+  font-size: 17px;
+}
+
+.inspector-section {
+  flex: 0 0 auto;
+  padding: 15px 17px 16px;
+  border-bottom: 1px solid #2a2d32;
+}
+
+.section-title {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.section-title > svg {
+  width: 15px;
+  height: 15px;
+  color: #98a09f;
+}
+
+.section-title h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 640;
+  letter-spacing: 0.01em;
+}
+
+.section-count {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  margin-left: 0;
+  place-items: center;
+  border-radius: 5px;
+  background: #292d32;
+  color: #a8afb6;
+  font-size: 10px;
+}
+
+@media (max-width: 1080px) {
+  .studio-layout {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+
+  .canvas-workspace {
+    padding-right: 17px;
+    padding-left: 17px;
+  }
+
+  .preview-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr);
+    gap: 12px;
+  }
+}
+
+.inspector-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

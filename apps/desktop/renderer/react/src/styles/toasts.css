@@ -1,0 +1,143 @@
+.recording-timer {
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid #693c40;
+  color: #ff8b91;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.action-button--recording {
+  border-color: #693c40;
+  color: #ffb3b6;
+}
+
+.toast-stack {
+  position: fixed;
+  z-index: 1100;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  max-width: calc(100vw - 28px);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  width: max-content;
+  max-width: min(400px, calc(100vw - 28px));
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 7px 7px 9px;
+  border: 1px solid #2c3137;
+  border-radius: 8px;
+  background: #1b1e22;
+  box-shadow: 0 6px 18px #00000052;
+  color: #c4cbd1;
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: auto;
+  animation: toast-in 160ms ease-out;
+}
+
+.toast--success {
+  border-color: #28463a;
+  color: #a6dcc4;
+}
+
+.toast--error {
+  border-color: #53373b;
+  color: #eab9bc;
+}
+
+.toast-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.toast--success .toast-icon {
+  background: #24493b;
+  color: #b9f0d8;
+}
+
+.toast--error .toast-icon {
+  background: #5a363b;
+  color: #ffd0d3;
+}
+
+.toast-message {
+  min-width: 0;
+  margin: 0;
+  color: #d6dce1;
+  overflow-wrap: anywhere;
+}
+
+.toast-action,
+.toast-close {
+  flex: none;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  opacity: 0.75;
+}
+
+.toast-action {
+  padding: 3px 7px;
+  border: 1px solid currentColor;
+  font-size: 10.5px;
+}
+
+.toast-close {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0;
+}
+
+.toast-close svg {
+  width: 11px;
+  height: 11px;
+}
+
+.toast-action:hover,
+.toast-close:hover {
+  background: #ffffff14;
+  opacity: 1;
+}
+
+.toast-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

@@ -1,0 +1,123 @@
+.camera-preview {
+  position: absolute;
+  right: 5%;
+  bottom: 8%;
+  display: grid;
+  width: 23%;
+  aspect-ratio: 4 / 3;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  overflow: hidden;
+  border: 1px solid #d9eee066;
+  border-radius: 5px;
+  background: linear-gradient(145deg, #705b54, #272c31 78%);
+  box-shadow: 0 3px 10px #0005;
+}
+
+.camera-avatar {
+  position: relative;
+  display: block;
+  width: 24%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #d8b39a;
+}
+
+.camera-avatar::after {
+  position: absolute;
+  top: 85%;
+  left: -40%;
+  width: 180%;
+  height: 95%;
+  border-radius: 50% 50% 0 0;
+  background: #28383c;
+  content: "";
+}
+
+.camera-label {
+  color: #ffffffbd;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.source-preview-object {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  overflow: hidden;
+  border: 1px solid #737b85;
+  background: #000;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.source-preview-object:active {
+  cursor: grabbing;
+}
+
+.source-preview-object--selected {
+  border: 1px solid #91e5c5;
+  box-shadow: 0 0 0 1px #91e5c54d;
+}
+
+.source-preview-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.source-preview-label {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: #171b20c9;
+  color: #c5cbd1;
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.source-preview-corner-resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #111316;
+  border-radius: 2px;
+  background: #d2ffec;
+  box-shadow: 0 0 0 1px #91e5c566;
+  touch-action: none;
+  transform: translate(-50%, -50%);
+}
+
+.source-preview-corner-resize-handle--bottom-left {
+  cursor: nesw-resize;
+}
+
+.source-preview-corner-resize-handle--bottom-right {
+  cursor: nwse-resize;
+}
+
+.source-preview-offscreen-handle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #111316;
+  border-radius: 3px;
+  background: #91e5c5;
+  box-shadow: 0 0 0 1px #91e5c566;
+  cursor: move;
+  touch-action: none;
+  transform: translate(-50%, -50%);
+}

@@ -293,7 +293,7 @@ bool MasterRecorder::start(const RecordingConfig& config, std::string& error) {
   } else {
     if (!config.capture_card_device.empty()) {
       Track* track = add(Track::Kind::Video, "Gameplay", config.capture_card_device);
-      track->video_config = {config.capture_card_device, config.capture_width, config.capture_height, config.fps, true};
+      track->video_config = {config.capture_card_device, config.capture_width, config.capture_height, config.fps, config.capture_exact_size};
     }
     if (!config.camera_device.empty()) {
       Track* track = add(Track::Kind::Video, "Webcam", config.camera_device);

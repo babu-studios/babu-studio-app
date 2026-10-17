@@ -1,0 +1,92 @@
+.game-art {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 72% 25%, #f1d09b 0 2%, transparent 2.5%),
+    linear-gradient(180deg, #637f8c 0%, #bd9c83 54%, #474b51 55%, #1d242a 100%);
+}
+
+.scene-just-chatting .game-art {
+  background:
+    radial-gradient(ellipse at 22% 27%, #edc48f 0 3%, transparent 3.5%),
+    linear-gradient(155deg, #554b59 0%, #a36c71 48%, #26353a 49%, #1a252a 100%);
+}
+
+.scene-starting-soon .game-art {
+  background:
+    radial-gradient(ellipse at 74% 25%, #aa9dfa 0 2.5%, transparent 3%),
+    linear-gradient(165deg, #31385a 0%, #544c77 45%, #243441 46%, #171e29 100%);
+}
+
+.game-sun {
+  position: absolute;
+  top: 18%;
+  right: 18%;
+  width: 8%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #f0d0a6;
+  filter: blur(3px);
+}
+
+.game-horizon {
+  position: absolute;
+  right: -10%;
+  bottom: 20%;
+  left: -10%;
+  height: 22%;
+  border-radius: 50% 50% 0 0;
+  background: linear-gradient(180deg, #62605e, #303a3c);
+  transform: rotate(-4deg);
+}
+
+.game-ridge {
+  position: absolute;
+  right: -15%;
+  bottom: 3%;
+  left: -12%;
+  height: 41%;
+  border-radius: 48% 53% 0 0;
+}
+
+.game-ridge--back {
+  bottom: 9%;
+  background: linear-gradient(160deg, #526064, #26343b 70%);
+  transform: rotate(6deg);
+}
+
+.game-ridge--front {
+  background: linear-gradient(170deg, #374849, #172329 78%);
+  transform: rotate(-5deg);
+}
+
+.game-grid {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 34%;
+  opacity: 0.2;
+  background-image:
+    linear-gradient(#bbd6cf44 1px, transparent 1px),
+    linear-gradient(90deg, #bbd6cf44 1px, transparent 1px);
+  background-size: 18px 12px;
+  mask-image: linear-gradient(transparent, #000);
+}
+
+.alert-preview {
+  position: absolute;
+  top: 14%;
+  left: 50%;
+  padding: 6px 9px;
+  border: 1px solid #ffffff22;
+  border-radius: 5px;
+  background: #171b20c9;
+  color: #f2e9d9;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  transform: translateX(-50%);
+}
