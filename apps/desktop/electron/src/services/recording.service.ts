@@ -3,6 +3,7 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { powerGuard } from "./power-guard.service";
 import type { Readable } from "node:stream";
 import type {
   NativeCaptureDevice,
@@ -130,6 +131,7 @@ function runFfmpeg(
 ): Promise<void> {
   const ffmpegPath = process.env.BABU_STUDIO_FFMPEG_PATH || "ffmpeg";
   return new Promise((resolve, reject) => {
+    const releasePowerGuard = powerGuard.acquire();
     const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
     onSpawn(child);
     let stderr = "";
@@ -150,8 +152,12 @@ function runFfmpeg(
         }
       }
     });
-    child.once("error", reject);
+    child.once("error", (error) => {
+      releasePowerGuard();
+      reject(error);
+    });
     child.once("close", (code, signal) => {
+      releasePowerGuard();
       onClose(child);
       if (code === 0) {
         resolve();
@@ -166,7 +172,8 @@ export class RecordingService {
   private projectFile?: string;
   private projectDirectory?: string;
   private projectMetadata?: ProjectMetadata;
-  private active = false;
+  private activeState = false;
+  private releaseRecordingPowerGuard?: () => void;
   private startPromise?: Promise<RecordingResult>;
   private stopPromise?: Promise<RecordingResult>;
   private retryPromise?: Promise<RecordingResult>;
@@ -184,6 +191,21 @@ export class RecordingService {
   private selectedExportModes: RecordingMode[] = ["HORIZONTAL", "VERTICAL"];
 
   constructor(private readonly mediaCore: MediaCoreService) {}
+
+  private get active(): boolean {
+    return this.activeState;
+  }
+
+  // Keep the system awake for the whole recording; sleeping pauses capture and truncates the file.
+  private set active(value: boolean) {
+    this.activeState = value;
+    if (value && !this.releaseRecordingPowerGuard) {
+      this.releaseRecordingPowerGuard = powerGuard.acquire();
+    } else if (!value) {
+      this.releaseRecordingPowerGuard?.();
+      this.releaseRecordingPowerGuard = undefined;
+    }
+  }
 
   async start(request: StartRecordingRequest): Promise<RecordingResult> {
     return this.startWithOptions(request, {});
@@ -754,8 +776,11 @@ export class RecordingService {
 
   private launchPostProcessing(result: RecordingResult): void {
     this.postProcessingCancelled = false;
+    // Hold the guard from launch until every export (and failure handling) has finished.
+    const releasePowerGuard = powerGuard.acquire();
     this.postProcessingPromise = this.postProcess(result)
-      .catch((error: unknown) => this.handlePostProcessingFailure(error));
+      .catch((error: unknown) => this.handlePostProcessingFailure(error))
+      .finally(releasePowerGuard);
   }
 
   private async handlePostProcessingFailure(error: unknown): Promise<void> {

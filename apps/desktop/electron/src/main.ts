@@ -6,6 +6,8 @@ import { registerMediaAccessIpc } from "./ipc/media-access.ipc";
 import { registerSystemStatsIpc } from "./ipc/system-stats.ipc";
 import { MediaCoreService } from "./services/media-core.service";
 import { RecordingService } from "./services/recording.service";
+import { registerStudioConfigIpc } from "./ipc/studio-config.ipc";
+import { StudioConfigService } from "./services/studio-config.service";
 import { createMainWindow } from "./services/window.service";
 
 const mediaCore = new MediaCoreService();
@@ -52,6 +54,7 @@ app.whenReady().then(async () => {
   registerMediaCoreIpc(mediaCore, recording);
   registerMediaAccessIpc();
   registerSystemStatsIpc();
+  registerStudioConfigIpc(new StudioConfigService(join(app.getPath("userData"), "studio-config.json")));
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
       ? details.securityOrigin ?? webContents.getURL()

@@ -20,6 +20,8 @@ The development command builds the C++ core before starting Electron. Recording 
 
 In both exports, microphone audio is compressed and boosted, and game audio is ducked while the microphone is active so speech stays in the foreground. The original source tracks remain separate in `master.mkv`.
 
+Scenes, layers and their placements, audio mixer settings, export layouts and quality, and preview visibility are saved to `studio-config.json` in Electron's user-data directory. Existing scene and audio settings stored in the previous browser-based format are imported the first time the file is created.
+
 Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox encoder on macOS. Post-processing invokes `ffmpeg` from `PATH`; set `BABU_STUDIO_FFMPEG_PATH` to use a specific executable. If VideoToolbox export fails, the app retries with `libx264`. Source recordings are kept if export fails.
 
 A live System Resources panel below the previews shows CPU, GPU, memory, and disk usage once per second. GPU utilization is read from macOS (`ioreg`) and shows N/A where unavailable; disk shows percent used with used and remaining space.

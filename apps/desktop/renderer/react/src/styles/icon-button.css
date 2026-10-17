@@ -1,0 +1,55 @@
+.icon-button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid #373c42;
+  border-radius: 5px;
+  background: #202328;
+  color: #8f979f;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.icon-button svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.icon-button:hover:not(:disabled),
+.icon-button--active {
+  border-color: #3a5449;
+  background: #202923;
+  color: #b1edd2;
+}
+
+.icon-button--danger:hover:not(:disabled),
+.icon-button--alert:hover:not(:disabled) {
+  border-color: #693c40;
+  background: #392629;
+  color: #ff979b;
+}
+
+.icon-button--alert {
+  border-color: #59403e;
+  color: #ec7777;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid #91e5c5;
+  outline-offset: 2px;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.icon-button.section-reload-button {
+  width: 28px;
+  height: 28px;
+}

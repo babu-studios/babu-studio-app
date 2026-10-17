@@ -1,0 +1,91 @@
+.layer-settings-panel {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  width: min(278px, calc(100vw - 24px));
+  max-height: calc(100vh - 16px);
+  flex-direction: column;
+  overflow-y: auto;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid #3b4046;
+  border-radius: 8px;
+  background: #202328;
+  box-shadow: 0 12px 28px #0008;
+  color: #d5d9dd;
+}
+
+.layer-settings-name,
+.layer-device-select {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  color: #9299a0;
+  font-size: 10px;
+}
+
+.layer-crop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layer-crop-title,
+.layer-crop-field {
+  color: #9299a0;
+  font-size: 10px;
+}
+
+.layer-crop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.layer-crop-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.layer-settings-name input,
+.layer-crop-field input {
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 0 7px;
+  border: 1px solid #3b4046;
+  border-radius: 5px;
+  outline: none;
+  background: #17191d;
+  color: #e4e8e9;
+  font-size: 11px;
+  color-scheme: dark;
+}
+
+.layer-settings-name input:focus,
+.layer-crop-field input:focus {
+  border-color: #668c7a;
+  box-shadow: 0 0 0 2px #91e5c51f;
+}
+
+.layer-device-error {
+  color: #ff9b9b;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.layer-resolution-hint {
+  color: #7f868e;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.layer-empty-state {
+  margin: 2px 0;
+  color: #7f868e;
+  font-size: 11px;
+}

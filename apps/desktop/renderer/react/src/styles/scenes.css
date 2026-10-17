@@ -1,0 +1,139 @@
+.layer-toggle-button:focus-visible,
+.scene-row:focus-visible {
+  outline: 2px solid #91e5c5;
+  outline-offset: 2px;
+}
+
+.layer-list,
+.scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  padding-right: 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #c2c6cb;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.scene-item:hover:not(.scene-item--active) {
+  border-color: #383c42;
+  background: #202328;
+}
+
+.scene-item--active {
+  border-color: #3a5449;
+  background: #202923;
+  color: #d6eee2;
+}
+
+.layer-row,
+.scene-row {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #c2c6cb;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scene-row {
+  width: auto;
+  min-width: 0;
+  flex: 1;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.scene-row > span:first-child {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.scene-row--editing {
+  cursor: text;
+}
+
+.scene-name-input {
+  min-width: 0;
+  height: 26px;
+  flex: 1;
+  padding: 0 6px;
+  border: 1px solid #527763;
+  border-radius: 4px;
+  outline: none;
+  background: #171c19;
+  color: #e2f3e9;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.scene-name-input:focus {
+  border-color: #91e5c5;
+  box-shadow: 0 0 0 2px #91e5c51f;
+}
+
+.scene-active-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #91e5c5;
+  box-shadow: 0 0 7px #91e5c577;
+}
+
+.delete-scene-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #858c93;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.delete-scene-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.delete-scene-button:hover:not(:disabled) {
+  border-color: #693c40;
+  background: #392629;
+  color: #ff979b;
+  opacity: 1;
+}
+
+.delete-scene-button:focus-visible {
+  outline: 2px solid #91e5c5;
+  outline-offset: 2px;
+}
+
+.delete-scene-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.25;
+}

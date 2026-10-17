@@ -1,9 +1,12 @@
 import type { ExportRecordingRequest, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "./media";
 import type { ProcessSnapshot, SystemStats } from "./system-stats";
+import type { StudioConfiguration } from "./studio-config";
 
 declare global {
   interface Window {
     babuStudio: {
+      loadStudioConfig(): Promise<StudioConfiguration | null>;
+      saveStudioConfig(configuration: StudioConfiguration): Promise<void>;
       getMediaCoreStatus(): Promise<MediaCoreStatus>;
       startRecording(request: StartRecordingRequest): Promise<RecordingResult>;
       stopRecording(): Promise<RecordingResult>;

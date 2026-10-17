@@ -14,7 +14,8 @@
     "build": "npm run build:core && npm run build --workspace @babu-studios/electron",
     "package:mac": "npm run build && npm run package:mac --workspace @babu-studios/electron",
     "typecheck": "npm run typecheck --workspace @babu-studios/electron && npm run typecheck --workspace @babu-studios/renderer",
-    "test:recording-flow": "npm run build --workspace @babu-studios/electron && node scripts/test-recording-flow.mjs"
+    "test:recording-flow": "npm run build --workspace @babu-studios/electron && node scripts/test-recording-flow.mjs",
+    "test:recording-flow:30min": "npm run build --workspace @babu-studios/electron && node scripts/test-recording-flow.mjs --duration-ms 1800000"
   },
   "allowScripts": {
     "electron@36.9.5": true,
