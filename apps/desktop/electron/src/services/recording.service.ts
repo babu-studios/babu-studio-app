@@ -168,6 +168,10 @@ function runFfmpeg(
   });
 }
 
+// Custom extensions so the OS has no app to open these internal files.
+const MASTER_FILE = "master.babu";
+const PROJECT_FILE = "project.babu";
+
 export class RecordingService {
   private projectFile?: string;
   private projectDirectory?: string;
@@ -351,7 +355,7 @@ export class RecordingService {
         ?? join(app.getPath("videos"), "Babu Studio", `recording-${recordingId}`);
       await mkdir(join(directory, "exports"), { recursive: true });
       this.projectDirectory = directory;
-      this.projectFile = join(directory, "project.json");
+      this.projectFile = join(directory, PROJECT_FILE);
       this.postProcessingState = "NOT_STARTED";
       this.selectedExportModes = request.exportModes ?? ["HORIZONTAL", "VERTICAL"];
       this.exportPath = null;
@@ -374,7 +378,7 @@ export class RecordingService {
           fps: request.fps,
         },
         sources: {
-          master: "master.mkv",
+          master: MASTER_FILE,
           videoTracks: [],
           audioTracks: [],
           timestamps: {
@@ -501,7 +505,7 @@ export class RecordingService {
     this.projectMetadata.stoppedAt = new Date().toISOString();
     this.projectMetadata.status = result.success ? "SOURCE_FINALIZED" : "ERROR";
     this.projectMetadata.sources = {
-      master: "master.mkv",
+      master: MASTER_FILE,
       videoTracks: result.videoTracks,
       audioTracks: result.audioTracks,
       timestamps: {
@@ -552,12 +556,12 @@ export class RecordingService {
       }
       const directory = join(root, entry.name);
       try {
-        const project = JSON.parse(await readFile(join(directory, "project.json"), "utf8")) as ProjectMetadata;
+        const project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
         const source = project.recordingResult as RecordingResult | undefined;
         if (!source?.success) {
           continue;
         }
-        await stat(join(directory, "master.mkv"));
+        await stat(join(directory, MASTER_FILE));
         summaries.push({
           id: entry.name,
           createdAt: typeof project.createdAt === "string" ? project.createdAt : "",
@@ -594,8 +598,8 @@ export class RecordingService {
     const directory = join(this.recordingsRoot(), request.id);
     let project: ProjectMetadata;
     try {
-      project = JSON.parse(await readFile(join(directory, "project.json"), "utf8")) as ProjectMetadata;
-      await stat(join(directory, "master.mkv"));
+      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
+      await stat(join(directory, MASTER_FILE));
     } catch {
       throw new Error("The selected recording's source files could not be found.");
     }
@@ -614,7 +618,7 @@ export class RecordingService {
     };
     project.exportModes = exportModes;
     this.projectDirectory = directory;
-    this.projectFile = join(directory, "project.json");
+    this.projectFile = join(directory, PROJECT_FILE);
     this.projectMetadata = project;
     this.finalizedResult = source;
     this.stopResult = undefined;
@@ -964,7 +968,7 @@ export class RecordingService {
       "-progress", "pipe:2",
       "-nostats",
       "-y",
-      "-i", join(projectDirectory, "master.mkv"),
+      "-i", join(projectDirectory, MASTER_FILE),
     ];
     const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
     const microphone = audioLayers.find((track) => track.trackName === "Microphone");

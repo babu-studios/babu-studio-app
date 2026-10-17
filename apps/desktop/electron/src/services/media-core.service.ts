@@ -84,7 +84,7 @@ export class MediaCoreService {
       `gameVolume=${request.gameVolume}`,
       `microphoneVolume=${request.microphoneVolume}`,
       `outputDir=${outputDir}`,
-      "fileName=master.mkv",
+      "fileName=master.babu",
       ...(synthetic ? ["synthetic=1"] : []),
     ];
     const clean = (value: string) => value.replace(/[\t\r\n]/g, " ");
