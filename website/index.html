@@ -59,6 +59,19 @@
       <p class="note">Don’t change “Allow applications from” to “Anywhere”. Only the single app needs to be allowed, as above.</p>
     </section>
 
+    <section id="security">
+      <h2>Security and verification</h2>
+      <p>Every release is built from the public source by GitHub Actions, scanned for malware, and published with checksums. You can check your download yourself.</p>
+      <ul>
+        <li><strong>Malware scan:</strong> each release is scanned with ClamAV, and the log is attached as <a href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/clamav-scan.log"><code>clamav-scan.log</code></a>.</li>
+        <li><strong>VirusTotal:</strong> when enabled, the release notes link to the VirusTotal report for each installer. See the <a href="https://github.com/babu-studios/babu-studio-app/releases/latest">latest release</a>. An unsigned open-source app may get a flag or two from a few engines; these are usually false positives.</li>
+        <li><strong>Checksums:</strong> compare your download with <a href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/SHA256SUMS"><code>SHA256SUMS</code></a>.</li>
+        <li><strong>Build provenance:</strong> confirm the file was built by this repository’s workflow.</li>
+      </ul>
+      <pre><code>shasum -a 256 ~/Downloads/Babu-Studio-arm64.dmg
+gh attestation verify ~/Downloads/Babu-Studio-arm64.dmg --repo babu-studios/babu-studio-app</code></pre>
+    </section>
+
     <section>
       <h2>Troubleshooting</h2>
       <ul>
