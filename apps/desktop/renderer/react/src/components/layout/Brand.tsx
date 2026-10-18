@@ -1,16 +1,25 @@
 export function Brand() {
   return (
     <div className="brand">
-      <svg className="brand-logo" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="16" cy="12" r="4.6" />
-        <path d="M9.6 12.5a6.4 6.4 0 0 1 12.8 0" />
-        <rect x="7.6" y="11.6" width="3" height="5.2" rx="1.3" fill="currentColor" />
-        <rect x="21.4" y="11.6" width="3" height="5.2" rx="1.3" fill="currentColor" />
-        <path d="M6 30c.4-4.6 4.2-7.4 10-7.4S25.6 25.4 26 30" />
-        <path d="M11.2 24.8h9.6a2.4 2.4 0 0 1 2.3 3l-.3 1.2a1.4 1.4 0 0 1-2.5.4l-.8-1.2h-6l-.8 1.2a1.4 1.4 0 0 1-2.5-.4l-.3-1.2a2.4 2.4 0 0 1 2.3-3z" fill="#17191d" />
-        <path d="M12.4 26.4v1.8M11.5 27.3h1.8" />
-        <circle cx="19.4" cy="26.6" r=".5" fill="currentColor" />
-        <circle cx="20.9" cy="27.7" r=".5" fill="currentColor" />
+      <svg className="brand-logo" viewBox="100 100 824 824" aria-hidden="true">
+        <defs>
+          <linearGradient id="brand-logo-bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#262d2a" />
+            <stop offset="1" stopColor="#101412" />
+          </linearGradient>
+          <radialGradient id="brand-logo-dot" cx="0.4" cy="0.35" r="0.8">
+            <stop offset="0" stopColor="#ff7a7a" />
+            <stop offset="1" stopColor="#e5304a" />
+          </radialGradient>
+        </defs>
+        <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#brand-logo-bg)" />
+        <g fill="none" stroke="#91e5c5" strokeWidth="44" strokeLinecap="round">
+          <path d="M345 345 A237 237 0 0 0 345 679" />
+          <path d="M679 345 A237 237 0 0 1 679 679" />
+          <path d="M262 262 A355 355 0 0 0 262 762" opacity="0.45" />
+          <path d="M762 262 A355 355 0 0 1 762 762" opacity="0.45" />
+        </g>
+        <circle cx="512" cy="512" r="128" fill="url(#brand-logo-dot)" />
       </svg>
       <div className="brand-text">
         <span className="brand-name">Babu Studio</span>

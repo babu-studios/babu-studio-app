@@ -1,6 +1,7 @@
 import { app, systemPreferences } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { powerGuard } from "./power-guard.service";
@@ -925,7 +926,7 @@ export class RecordingService {
     const height = canvas.height;
     const fps = Math.round(finite(projectCanvas.fps ?? 60, 60));
     const durationSeconds = Math.max(0.1, result.durationMs / 1000);
-    const graph: string[] = [`color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)}[base0]`];
+    const graph: string[] = [`color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)},format=yuv420p[base0]`];
     let currentVideo = "base0";
     let nextLayer = 0;
     for (const layer of videoLayers) {
@@ -955,9 +956,9 @@ export class RecordingService {
       const layerLabel = `layer${nextLayer}`;
       const composedLabel = `base${nextLayer + 1}`;
       graph.push(
-        `[0:v:${trackIndex}]setpts=PTS-STARTPTS+${sourceOffsetSeconds}/TB,crop=iw-${left + right}:ih-${top + bottom}:${left}:${top},scale=${targetWidth}:${targetHeight}:flags=lanczos,setsar=1,format=rgba[${layerLabel}]`,
+        `[0:v:${trackIndex}]setpts=PTS-STARTPTS+${sourceOffsetSeconds}/TB,crop=iw-${left + right}:ih-${top + bottom}:${left}:${top},scale=${targetWidth}:${targetHeight}:flags=bicubic,setsar=1,format=yuva420p[${layerLabel}]`,
       );
-      graph.push(`[${currentVideo}][${layerLabel}]overlay=${x}:${y}:eof_action=pass:shortest=0[${composedLabel}]`);
+      graph.push(`[${currentVideo}][${layerLabel}]overlay=${x}:${y}:format=yuv420:eof_action=pass:shortest=0[${composedLabel}]`);
       currentVideo = composedLabel;
       nextLayer += 1;
     }
@@ -968,6 +969,9 @@ export class RecordingService {
       "-progress", "pipe:2",
       "-nostats",
       "-y",
+      "-threads", "0",
+      "-filter_threads", String(os.cpus().length),
+      "-filter_complex_threads", String(os.cpus().length),
       "-i", join(projectDirectory, MASTER_FILE),
     ];
     const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
@@ -1005,6 +1009,8 @@ export class RecordingService {
       "-t", durationSeconds.toFixed(3),
       "-r", String(fps),
       "-c:v", "h264_videotoolbox", "-allow_sw", "1",
+      "-b:v", width >= 3840 ? "40M" : width >= 1920 || height >= 1920 ? "20M" : "10M",
+      "-realtime", "0", "-prio_speed", "1", "-profile:v", "high",
       ...(audioOutputLabel ? ["-c:a", "aac", "-b:a", "192k"] : []),
       "-movflags", "+faststart",
       exportPath,
@@ -1028,6 +1034,14 @@ export class RecordingService {
       }
       softwareArgs[encoderIndex] = "libx264";
       softwareArgs.splice(encoderIndex + 1, 0, "-preset", "veryfast", "-crf", "20");
+      const bitrateIndex = softwareArgs.indexOf("-b:v");
+      const bitrateFlags = softwareArgs.indexOf("-realtime");
+      if (bitrateIndex >= 0) {
+        softwareArgs.splice(bitrateIndex, 2);
+      }
+      if (bitrateFlags >= 0) {
+        softwareArgs.splice(softwareArgs.indexOf("-realtime"), 4);
+      }
       const softwareFallbackIndex = softwareArgs.indexOf("-allow_sw");
       if (softwareFallbackIndex >= 0) {
         softwareArgs.splice(softwareFallbackIndex, 2);
