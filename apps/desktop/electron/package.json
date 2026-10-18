@@ -37,6 +37,7 @@
     ],
     "mac": {
       "identity": "-",
+      "artifactName": "Babu-Studio-${arch}.${ext}",
       "hardenedRuntime": false,
       "category": "public.app-category.video",
       "extendInfo": {
