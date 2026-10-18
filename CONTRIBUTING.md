@@ -60,6 +60,8 @@ This builds the core, bundles it with FFmpeg and its libraries, and writes an ad
 
 3. The **Release** workflow builds Apple Silicon and Intel installers and attaches them to a GitHub release. The website download buttons use `releases/latest/download/Babu-Studio-<arch>.dmg`.
 
+The workflow also scans the installers with ClamAV, attaches `SHA256SUMS` and `clamav-scan.log`, and publishes build attestations. To add VirusTotal report links to the release notes, add a free VirusTotal API key as the `VT_API_KEY` repository secret. Without it that step is skipped.
+
 The website in [website/](website) deploys to GitHub Pages from `main`. Enable it once under **Settings → Pages → Source: GitHub Actions**.
 
 ## Reporting bugs
