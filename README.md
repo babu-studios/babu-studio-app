@@ -22,7 +22,7 @@ In both exports, microphone audio is compressed and boosted, and game audio is d
 
 Scenes, layers and their placements, audio mixer settings, export layouts and quality, and preview visibility are saved to `studio-config.json` in Electron's user-data directory. Existing scene and audio settings stored in the previous browser-based format are imported the first time the file is created.
 
-Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox encoder on macOS. Post-processing invokes `ffmpeg` from `PATH`; set `BABU_STUDIO_FFMPEG_PATH` to use a specific executable. If VideoToolbox export fails, the app retries with `libx264`. Source recordings are kept if export fails.
+Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox encoder on macOS. Packaged apps include their own FFmpeg, so users install nothing else. In development, post-processing invokes `ffmpeg` from `PATH`; set `BABU_STUDIO_FFMPEG_PATH` to use a specific executable. If VideoToolbox export fails, the app retries with `libx264`. Source recordings are kept if export fails.
 
 A live System Resources panel below the previews shows CPU, GPU, memory, and disk usage once per second. GPU utilization is read from macOS (`ioreg`) and shows N/A where unavailable; disk shows percent used with used and remaining space.
 
@@ -36,3 +36,11 @@ npm run package:mac
 ```
 
 See [docs/development/setup.md](docs/development/setup.md) for the app boundaries and build details.
+
+## Download
+
+Get the latest installer for Apple Silicon or Intel from the [download page](https://babu-studios.github.io/babu-studio-app/) or the [Releases](https://github.com/babu-studios/babu-studio-app/releases) page. The app isn't notarized, so the first launch needs a one-time "Open Anyway" approval; the download page explains it.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).

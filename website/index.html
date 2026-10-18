@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Babu Studio — Record and stream for macOS</title>
+  <meta name="description" content="Babu Studio records capture card, webcam and audio in sync and exports landscape and portrait videos. Free for macOS.">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <img class="logo" src="icon.png" alt="Babu Studio logo" width="128" height="128">
+    <h1>Babu Studio</h1>
+    <p class="tagline">Record your capture card, webcam and microphone in sync, then export landscape and portrait videos in one go.</p>
+
+    <div class="downloads">
+      <a class="button primary" id="download-main" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-arm64.dmg">Download for Apple Silicon</a>
+      <a class="button" id="download-alt" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-x64.dmg">Download for Intel Mac</a>
+    </div>
+    <p class="note">Free · macOS 12 or newer · <a href="https://github.com/babu-studios/babu-studio-app/releases">All releases</a></p>
+    <p class="note" id="chip-hint">Not sure which one? Click the Apple menu → <strong>About This Mac</strong>. If it says “Chip: Apple M…”, choose Apple Silicon. If it says “Processor: Intel”, choose Intel.</p>
+  </header>
+
+  <main>
+    <section id="install">
+      <h2>Install</h2>
+      <ol class="steps">
+        <li><strong>Download</strong> the <code>.dmg</code> that matches your Mac.</li>
+        <li><strong>Open</strong> the <code>.dmg</code> and drag <strong>Babu Studio</strong> into <strong>Applications</strong>.</li>
+        <li><strong>First launch:</strong> macOS will warn that it can’t verify the app. Follow <a href="#allow">Allow the app to open</a> below. You only do this once.</li>
+        <li><strong>Grant access</strong> to the camera and microphone when asked, so the app can list and capture your devices.</li>
+      </ol>
+      <p>FFmpeg is included. You don’t need to install anything else.</p>
+    </section>
+
+    <section id="allow">
+      <h2>Allow the app to open</h2>
+      <p>Babu Studio is free and isn’t notarized by Apple yet, so macOS Gatekeeper blocks the first launch. The app is open source, and you can read the code in the <a href="https://github.com/babu-studios/babu-studio-app">repository</a>. Pick the option for your macOS version.</p>
+
+      <h3>macOS 15 Sequoia or newer</h3>
+      <ol class="steps">
+        <li>Open <strong>Babu Studio</strong> from Applications. Click <strong>Done</strong> on the warning.</li>
+        <li>Open <strong>System Settings → Privacy &amp; Security</strong> and scroll to <strong>Security</strong>.</li>
+        <li>Next to “Babu Studio was blocked…”, click <strong>Open Anyway</strong> and confirm with your password or Touch ID.</li>
+        <li>Click <strong>Open</strong> when asked again.</li>
+      </ol>
+
+      <h3>macOS 14 Sonoma or older</h3>
+      <ol class="steps">
+        <li>In Applications, <strong>right-click</strong> (or Control-click) <strong>Babu Studio</strong>.</li>
+        <li>Choose <strong>Open</strong>, then click <strong>Open</strong> in the dialog.</li>
+      </ol>
+
+      <h3>Terminal (any version)</h3>
+      <p>If the steps above don’t work, remove the download quarantine flag:</p>
+      <pre><code>xattr -dr com.apple.quarantine "/Applications/Babu Studio.app"</code></pre>
+
+      <p class="note">Don’t change “Allow applications from” to “Anywhere”. Only the single app needs to be allowed, as above.</p>
+    </section>
+
+    <section>
+      <h2>Troubleshooting</h2>
+      <ul>
+        <li><strong>“Babu Studio is damaged and can’t be opened”:</strong> run the Terminal command above.</li>
+        <li><strong>No camera or microphone listed:</strong> open <strong>System Settings → Privacy &amp; Security → Camera / Microphone</strong> and turn on Babu Studio, then restart the app.</li>
+        <li><strong>Wrong download:</strong> the Intel build runs on Apple Silicon only through Rosetta and is slower. Use the build that matches your chip.</li>
+        <li>Still stuck? <a href="https://github.com/babu-studios/babu-studio-app/issues">Open an issue</a>.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>Developed by <a href="https://www.instagram.com/b4babugaming/">@b4babugaming</a> · <a href="https://github.com/babu-studios/babu-studio-app">Source on GitHub</a> · <a href="https://github.com/babu-studios/babu-studio-app/blob/main/CONTRIBUTING.md">Contribute</a></p>
+  </footer>
+
+  <script>
+    // Recommend the build for the visitor's Mac when the browser can tell us.
+    (function () {
+      var canvas = document.createElement("canvas");
+      var gl = canvas.getContext("webgl");
+      var info = gl && gl.getExtension("WEBGL_debug_renderer_info");
+      var renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "";
+      if (/Intel/i.test(renderer) && !/Apple/i.test(renderer)) {
+        var main = document.getElementById("download-main");
+        var alt = document.getElementById("download-alt");
+        var href = main.href, label = main.textContent;
+        main.href = alt.href; main.textContent = alt.textContent;
+        alt.href = href; alt.textContent = label;
+      }
+    })();
+  </script>
+</body>
+</html>
