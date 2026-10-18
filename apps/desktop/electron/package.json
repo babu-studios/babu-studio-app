@@ -13,7 +13,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitejs/plugin-react": "^4.3.0",
-    "electron": "^44.8.0",
+    "electron": "44.8.0",
     "electron-builder": "^26.0.0",
     "electron-vite": "^4.0.0",
     "typescript": "^5.8.0",
@@ -31,11 +31,13 @@
     ],
     "extraResources": [
       {
-        "from": "../../../core/build/bin/creator-media-core",
-        "to": "media-core/creator-media-core"
+        "from": "../../../core/build/bundle",
+        "to": "media-core"
       }
     ],
     "mac": {
+      "identity": "-",
+      "hardenedRuntime": false,
       "category": "public.app-category.video",
       "extendInfo": {
         "NSCameraUsageDescription": "Babu Studio uses camera access to show connected cameras and capture cards in your scene preview.",

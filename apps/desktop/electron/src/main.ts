@@ -14,6 +14,12 @@ const recording = new RecordingService(mediaCore);
 
 app.setName("Babu Studio");
 
+if (app.isPackaged) {
+  const bundledBin = join(process.resourcesPath, "media-core", "bin");
+  process.env.BABU_STUDIO_FFMPEG_PATH ??= join(bundledBin, "ffmpeg");
+  process.env.BABU_STUDIO_FFPROBE_PATH ??= join(bundledBin, "ffprobe");
+}
+
 function getMediaCorePath(): string {
   const configuredPath = process.env.BABU_STUDIO_MEDIA_CORE_PATH;
   if (configuredPath) {
@@ -21,7 +27,7 @@ function getMediaCorePath(): string {
   }
   const executable = process.platform === "win32" ? "creator-media-core.exe" : "creator-media-core";
   if (app.isPackaged) {
-    return join(process.resourcesPath, "media-core", executable);
+    return join(process.resourcesPath, "media-core", "bin", executable);
   }
   return resolve(app.getAppPath(), "../../../core/build/bin", executable);
 }

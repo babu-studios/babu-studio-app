@@ -27,4 +27,8 @@ npm run build
 npm run package:mac
 ```
 
-`npm run package:mac` produces a macOS installer and includes the built native core as an application resource. Build the native core on the target macOS architecture.
+`npm run package:mac` builds the native core, bundles it with FFmpeg (`scripts/bundle-media-tools.mjs`), and produces an ad-hoc signed macOS installer. The bundle (`core/build/bundle`) contains `creator-media-core`, `ffmpeg`, `ffprobe`, and every non-system dylib they need with relative load paths, so end users do not install FFmpeg or Homebrew. The packaged app points `BABU_STUDIO_FFMPEG_PATH` and `BABU_STUDIO_FFPROBE_PATH` at the bundled tools.
+
+The bundle uses the build machine's architecture and its FFmpeg (found on `PATH`, or set `BABU_STUDIO_FFMPEG_SOURCE`). Build on an Apple Silicon Mac for arm64 and on an Intel Mac for x64. The FFmpeg must include `h264_videotoolbox`, and Homebrew's build is GPL (libx264), so check its license against your distribution plans or use an LGPL build.
+
+The app is not notarized. On first launch users must right-click the app and choose **Open**, or use **System Settings → Privacy & Security → Open Anyway**.
