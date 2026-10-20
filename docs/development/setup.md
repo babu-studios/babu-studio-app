@@ -6,6 +6,7 @@
 - Node.js 20 or newer with npm
 - CMake 3.20 or newer
 - Xcode Command Line Tools, including Apple Clang
+- FFmpeg and `pkg-config`, for the native core's libav* libraries
 
 ## Install and run
 

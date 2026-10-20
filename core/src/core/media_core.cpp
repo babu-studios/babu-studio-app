@@ -9,6 +9,9 @@
 namespace creator::core {
 namespace {
 
+// Mixer levels reach the core as gain factors: 1 is unity, 2 is a full boost.
+constexpr double kMaxAudioGain = 2.0;
+
 std::string json_escape(const std::string& value) {
   std::string out;
   for (const char c : value) {
@@ -122,8 +125,8 @@ RecordingConfig parse_config(const std::map<std::string, std::string>& fields) {
   if (config.master_file_name.find('/') != std::string::npos || config.master_file_name.empty()) {
     throw std::invalid_argument("Invalid master file name");
   }
-  config.game_volume = std::clamp(config.game_volume, 0.0, 1.0);
-  config.microphone_volume = std::clamp(config.microphone_volume, 0.0, 1.0);
+  config.game_volume = std::clamp(config.game_volume, 0.0, kMaxAudioGain);
+  config.microphone_volume = std::clamp(config.microphone_volume, 0.0, kMaxAudioGain);
   return config;
 }
 

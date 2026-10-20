@@ -24,7 +24,9 @@ export function AudioTrackItem({ track, isRecordingActive, ...audio }: AudioTrac
   } = audio;
   const isSettingsTrack = track.id === audioSettingsTrackId;
   const settingsOpen = audioSettingsOpen && isSettingsTrack;
-  const meterLevel = track.muted ? 0 : Math.round(((audioMeterLevels[track.id] ?? 0) * track.volume) / 100);
+  const meterLevel = track.muted
+    ? 0
+    : Math.max(0, Math.min(100, Math.round(((audioMeterLevels[track.id] ?? 0) * track.volume) / 100)));
 
   return (
     <div className={`audio-track${track.muted ? " audio-track--muted" : ""}`}>

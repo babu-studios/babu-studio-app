@@ -1,3 +1,4 @@
+import { MAX_AUDIO_GAIN } from "@shared/constants/media.constants";
 import { getCaptureResolution } from "@/features/studio/utils/crop";
 import { findAudioDeviceByName, findBuiltInMicrophone, isSupportedCaptureCard, normalizeAudioDeviceName } from "@/features/studio/utils/devices";
 import type { useStudioConfiguration } from "@/features/studio/hooks/useStudioConfiguration";
@@ -61,7 +62,9 @@ export function useRecordingSession({
 
     const trackVolume = (id: string) => {
       const track = audioTracks.find((item) => item.id === id);
-      return track && !track.muted ? track.volume / 100 : 0;
+      return track && !track.muted
+        ? Math.max(0, Math.min(MAX_AUDIO_GAIN, track.volume / 100))
+        : 0;
     };
     const recordingScene: RecordingScene = {
       scene: currentScene,

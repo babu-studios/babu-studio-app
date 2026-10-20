@@ -38,6 +38,7 @@ export type AudioTrack = {
   id: string;
   name: string;
   icon: IconName;
+  /** Mixer level in percent of the captured source: 100 is unity, up to 200 boosts it. */
   volume: number;
   muted: boolean;
 };

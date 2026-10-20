@@ -18,7 +18,7 @@ import type {
   RecordingSummary,
   StartRecordingRequest,
 } from "@shared/types/media";
-import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS } from "@shared/constants/media.constants";
+import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS, MAX_AUDIO_GAIN } from "@shared/constants/media.constants";
 import type { MediaCoreService } from "./media-core.service";
 
 const RECORDING_ID_PATTERN = /^recording-[0-9A-Za-z-]+$/;
@@ -977,7 +977,7 @@ export class RecordingService {
     const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
     const microphone = audioLayers.find((track) => track.trackName === "Microphone");
     const inputFor = (track: (typeof audioLayers)[number]) => `[0:a:${audioTrackNames.indexOf(track.trackName)}]`;
-    const gainFor = (track: (typeof audioLayers)[number]) => Math.max(0, Math.min(1, track.volume)).toFixed(4);
+    const gainFor = (track: (typeof audioLayers)[number]) => Math.max(0, Math.min(MAX_AUDIO_GAIN, track.volume)).toFixed(4);
     const alignAudioTrack = (track: (typeof audioLayers)[number]) => {
       const delayMs = trackStartOffsetMs(track.trackName, "audio");
       const delay = delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : "";

@@ -50,6 +50,7 @@ export type RecordingExport = {
 export type StartRecordingRequest = {
   mode: RecordingMode;
   fps: number;
+  /** Mixer levels as gain factors: 1 is the captured level, up to 2 boosts it in the export. */
   gameVolume: number;
   microphoneVolume: number;
   captureCard?: string;

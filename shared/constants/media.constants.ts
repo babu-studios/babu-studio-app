@@ -1,6 +1,10 @@
 export const MEDIA_CORE_STATUS_TIMEOUT_MS = 5000;
 export const MEDIA_CORE_RECORDING_TIMEOUT_MS = 20000;
 
+// Mixer levels are percentages of the captured source level: 100 is unity, 200 doubles it.
+export const MAX_AUDIO_VOLUME_PERCENT = 200;
+export const MAX_AUDIO_GAIN = MAX_AUDIO_VOLUME_PERCENT / 100;
+
 export const EXPORT_RESOLUTIONS = {
   "360p": { label: "SD 360p", horizontal: { width: 640, height: 360 }, vertical: { width: 360, height: 640 } },
   "480p": { label: "SD 480p", horizontal: { width: 854, height: 480 }, vertical: { width: 480, height: 854 } },
