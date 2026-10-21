@@ -1,4 +1,5 @@
 import { useRef, useState, type RefObject } from "react";
+import { DEFAULT_NOISE_REDUCTION } from "@shared/constants/media.constants";
 import { useDismissOnOutside } from "@/hooks/useDismissOnOutside";
 import { usePopupPosition } from "@/hooks/usePopupPosition";
 import type { useStudioConfiguration } from "@/features/studio/hooks/useStudioConfiguration";
@@ -93,7 +94,7 @@ export function useAudioMixer({ config, inspectorRef, isRecordingActive }: UseAu
     setAudioTracks((tracks) => (
       tracks.some((track) => track.id === id)
         ? tracks
-        : [...tracks, { id, name, icon: "audio", volume: 100, muted: false }]
+        : [...tracks, { id, name, icon: "audio", volume: 100, noiseReduction: DEFAULT_NOISE_REDUCTION, muted: false }]
     ));
     setAudioAddMenuOpen(false);
   }

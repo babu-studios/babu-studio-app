@@ -72,6 +72,13 @@
   overflow-wrap: anywhere;
 }
 
+.audio-device-hint {
+  margin: 0;
+  color: #7d848c;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .audio-track-name {
   min-width: 0;
   gap: 7px;

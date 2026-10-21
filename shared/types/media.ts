@@ -1,3 +1,5 @@
+import type { NoiseReductionLevel } from "../constants/media.constants";
+
 export type MediaCoreStatus = "ready";
 
 export type RecordingMode = "HORIZONTAL" | "VERTICAL";
@@ -53,6 +55,8 @@ export type StartRecordingRequest = {
   /** Mixer levels as gain factors: 1 is the captured level, up to 2 boosts it in the export. */
   gameVolume: number;
   microphoneVolume: number;
+  /** Noise reduction applied to the microphone track while exporting. */
+  noiseReduction?: NoiseReductionLevel;
   captureCard?: string;
   camera?: string;
   gameAudio?: string;

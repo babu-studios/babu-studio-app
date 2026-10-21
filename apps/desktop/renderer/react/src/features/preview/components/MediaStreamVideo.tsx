@@ -6,10 +6,17 @@ type MediaStreamVideoProps = {
   stream: MediaStream;
   resolution: CaptureResolution;
   crop: CropInsets;
+  containerAspectRatio: number;
   onSourceDimensions: (dimensions: SourceDimensions) => void;
 };
 
-export function MediaStreamVideo({ stream, resolution, crop, onSourceDimensions }: MediaStreamVideoProps) {
+export function MediaStreamVideo({
+  stream,
+  resolution,
+  crop,
+  containerAspectRatio,
+  onSourceDimensions,
+}: MediaStreamVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoSize, setVideoSize] = useState({ width: resolution.width, height: resolution.height });
 
@@ -40,7 +47,7 @@ export function MediaStreamVideo({ stream, resolution, crop, onSourceDimensions 
       autoPlay
       muted
       playsInline
-      style={getCroppedVideoStyle(crop, videoSize.width, videoSize.height)}
+      style={getCroppedVideoStyle(crop, videoSize.width, videoSize.height, containerAspectRatio)}
       onLoadedMetadata={(event) => {
         const dimensions = {
           width: event.currentTarget.videoWidth || resolution.width,

@@ -73,6 +73,7 @@ export function OutputPreview({
               stackCount={sourceLayers.length}
               stackIndex={index}
               stream={browserCaptureStreams[layer.id]}
+              outputAspectRatio={output.width / output.height}
               handlers={getHandlers(layer)}
               onSourceDimensions={(dimensions) => onSourceDimensionsChange(layer.id, dimensions)}
             />

@@ -23,6 +23,8 @@ In both exports, microphone audio is compressed and boosted so speech stays in t
 
 Mixer levels run from 0% to 200%. 100% matches the level the source was captured at, and anything above it boosts that track in the export, so a quiet capture card or microphone can be raised without re-recording. The live capture-card monitor follows the same level, and the recorded master file always keeps the untouched source tracks.
 
+The microphone track has a **Noise reduction** setting (Off, Low, Medium, High) in its settings popup. It runs a high-pass filter to drop rumble and an FFT denoiser to remove hiss, leaving the voice band largely untouched. Like the mixer levels it is applied while exporting, so the master file keeps the raw microphone track.
+
 Scenes, layers and their placements, audio mixer settings, export layouts and quality, and preview visibility are saved to `studio-config.json` in Electron's user-data directory. Existing scene and audio settings stored in the previous browser-based format are imported the first time the file is created.
 
 Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox encoder on macOS. Packaged apps include their own FFmpeg, so users install nothing else. In development, post-processing invokes `ffmpeg` from `PATH`; set `BABU_STUDIO_FFMPEG_PATH` to use a specific executable. If VideoToolbox export fails, the app retries with `libx264`. Source recordings are kept if export fails.

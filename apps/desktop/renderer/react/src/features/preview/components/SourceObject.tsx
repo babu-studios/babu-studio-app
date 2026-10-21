@@ -13,6 +13,7 @@ type SourceObjectProps = {
   stackCount: number;
   stackIndex: number;
   stream: MediaStream | undefined;
+  outputAspectRatio: number;
   handlers: LayerPointerHandlers;
   onSourceDimensions: (dimensions: SourceDimensions) => void;
 };
@@ -24,6 +25,7 @@ export function SourceObject({
   stackCount,
   stackIndex,
   stream,
+  outputAspectRatio,
   handlers,
   onSourceDimensions,
 }: SourceObjectProps) {
@@ -47,6 +49,7 @@ export function SourceObject({
             stream={stream}
             resolution={getCaptureResolution(layer.captureResolution)}
             crop={layer.crop}
+            containerAspectRatio={(transform.width / transform.height) * outputAspectRatio}
             onSourceDimensions={onSourceDimensions}
           />
         ) : (

@@ -1,4 +1,5 @@
 import { getCropFractions } from "@/features/studio/utils/crop";
+import type { NoiseReductionLevel } from "@shared/constants/media.constants";
 
 export type OutputId = "landscape" | "portrait";
 
@@ -40,6 +41,8 @@ export type AudioTrack = {
   icon: IconName;
   /** Mixer level in percent of the captured source: 100 is unity, up to 200 boosts it. */
   volume: number;
+  /** Noise reduction applied to the microphone track while exporting. */
+  noiseReduction: NoiseReductionLevel;
   muted: boolean;
 };
 
