@@ -18,7 +18,14 @@ import type {
   RecordingSummary,
   StartRecordingRequest,
 } from "@shared/types/media";
-import { DEFAULT_EXPORT_RESOLUTION, EXPORT_RESOLUTIONS } from "@shared/constants/media.constants";
+import {
+  DEFAULT_EXPORT_RESOLUTION,
+  DEFAULT_NOISE_REDUCTION,
+  EXPORT_RESOLUTIONS,
+  isNoiseReductionLevel,
+  MAX_AUDIO_GAIN,
+} from "@shared/constants/media.constants";
+import type { NoiseReductionLevel } from "@shared/constants/media.constants";
 import type { MediaCoreService } from "./media-core.service";
 
 const RECORDING_ID_PATTERN = /^recording-[0-9A-Za-z-]+$/;
@@ -33,6 +40,15 @@ const CAPTURE_SIZES = {
   "1440p": { width: 2560, height: 1440 },
   "2160p": { width: 3840, height: 2160 },
 } as const;
+
+// Noise reduction for the microphone track. The high-pass filter drops rumble and the
+// FFT denoiser removes hiss while leaving the voice band largely untouched.
+const NOISE_REDUCTION_FILTERS: Record<NoiseReductionLevel, string> = {
+  OFF: "",
+  LOW: "highpass=f=80,afftdn=nr=6:nf=-45",
+  MEDIUM: "highpass=f=100,afftdn=nr=12:nf=-35",
+  HIGH: "highpass=f=120,afftdn=nr=18:nf=-30",
+};
 
 type ProjectMetadata = Record<string, unknown> & {
   status: string;
@@ -259,6 +275,8 @@ export class RecordingService {
       fps: 60,
       gameVolume: 1,
       microphoneVolume: 1,
+      // Exercise the microphone noise-reduction filters in the end-to-end flow test.
+      noiseReduction: "HIGH",
       captureCard: "synthetic-game",
       camera: "synthetic-camera",
       gameAudio: "synthetic-game-audio",
@@ -392,6 +410,9 @@ export class RecordingService {
           gameVolume: request.gameVolume,
           microphoneVolume: request.microphoneVolume,
           microphoneEnabled: request.microphoneEnabled !== false,
+          noiseReduction: isNoiseReductionLevel(request.noiseReduction)
+            ? request.noiseReduction
+            : DEFAULT_NOISE_REDUCTION,
           sampleRate: 48000,
           channels: 2,
         },
@@ -904,11 +925,14 @@ export class RecordingService {
     }
     const audioTrackNames = result.audioTracks;
     const audioSettings = project.audio && typeof project.audio === "object"
-      ? project.audio as { gameVolume?: number; microphoneVolume?: number }
+      ? project.audio as { gameVolume?: number; microphoneVolume?: number; noiseReduction?: NoiseReductionLevel }
       : {};
+    const microphoneNoiseReduction = isNoiseReductionLevel(audioSettings.noiseReduction)
+      ? audioSettings.noiseReduction
+      : DEFAULT_NOISE_REDUCTION;
     const audioLayers = [
-      { trackName: "Game Audio", volume: finite(audioSettings.gameVolume ?? 1, 1) },
-      { trackName: "Microphone", volume: finite(audioSettings.microphoneVolume ?? 1, 1) },
+      { trackName: "Game Audio", volume: finite(audioSettings.gameVolume ?? 1, 1), noiseReduction: DEFAULT_NOISE_REDUCTION },
+      { trackName: "Microphone", volume: finite(audioSettings.microphoneVolume ?? 1, 1), noiseReduction: microphoneNoiseReduction },
     ].filter((track) => audioTrackNames.includes(track.trackName));
     const trackStartOffsetMs = (name: string, kind: "video" | "audio") => {
       const track = result.trackStats?.find((candidate) => candidate.name === name && candidate.kind === kind);
@@ -956,7 +980,7 @@ export class RecordingService {
       const layerLabel = `layer${nextLayer}`;
       const composedLabel = `base${nextLayer + 1}`;
       graph.push(
-        `[0:v:${trackIndex}]setpts=PTS-STARTPTS+${sourceOffsetSeconds}/TB,crop=iw-${left + right}:ih-${top + bottom}:${left}:${top},scale=${targetWidth}:${targetHeight}:flags=bicubic,setsar=1,format=yuva420p[${layerLabel}]`,
+        `[0:v:${trackIndex}]setpts=PTS-STARTPTS+${sourceOffsetSeconds}/TB,crop=iw-${left + right}:ih-${top + bottom}:${left}:${top},scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1,format=yuva420p[${layerLabel}]`,
       );
       graph.push(`[${currentVideo}][${layerLabel}]overlay=${x}:${y}:format=yuv420:eof_action=pass:shortest=0[${composedLabel}]`);
       currentVideo = composedLabel;
@@ -977,11 +1001,12 @@ export class RecordingService {
     const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
     const microphone = audioLayers.find((track) => track.trackName === "Microphone");
     const inputFor = (track: (typeof audioLayers)[number]) => `[0:a:${audioTrackNames.indexOf(track.trackName)}]`;
-    const gainFor = (track: (typeof audioLayers)[number]) => Math.max(0, Math.min(1, track.volume)).toFixed(4);
+    const gainFor = (track: (typeof audioLayers)[number]) => Math.max(0, Math.min(MAX_AUDIO_GAIN, track.volume)).toFixed(4);
     const alignAudioTrack = (track: (typeof audioLayers)[number]) => {
       const delayMs = trackStartOffsetMs(track.trackName, "audio");
       const delay = delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : "";
-      return `${inputFor(track)}aresample=48000,asetpts=PTS-STARTPTS${delay}`;
+      const noiseReduction = NOISE_REDUCTION_FILTERS[track.noiseReduction];
+      return `${inputFor(track)}aresample=48000,asetpts=PTS-STARTPTS${delay}${noiseReduction ? `,${noiseReduction}` : ""}`;
     };
     let audioOutputLabel: string | undefined;
     if (gameAudio && microphone) {

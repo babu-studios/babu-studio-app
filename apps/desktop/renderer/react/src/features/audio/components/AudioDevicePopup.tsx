@@ -1,4 +1,9 @@
 import { createPortal } from "react-dom";
+import {
+  isNoiseReductionLevel,
+  NOISE_REDUCTION_LABELS,
+  NOISE_REDUCTION_LEVELS,
+} from "@shared/constants/media.constants";
 import { Dropdown } from "@/components/common/Dropdown";
 import type { AudioSidebarProps } from "@/features/studio/components/sidebar.types";
 import type { AudioTrack } from "@/features/studio/types/studio.types";
@@ -17,6 +22,7 @@ type AudioDevicePopupProps = Pick<
   | "audioSettingsPosition"
   | "audioSettingsPopupRef"
   | "showAudioInputLoading"
+  | "updateAudioTrack"
 > & {
   track: AudioTrack;
   isRecordingActive: boolean;
@@ -37,6 +43,7 @@ export function AudioDevicePopup({
   audioSettingsPosition,
   audioSettingsPopupRef,
   showAudioInputLoading,
+  updateAudioTrack,
 }: AudioDevicePopupProps) {
   const trackInputId = track.id === "mic" ? selectedAudioInputId : audioTrackInputIds[track.id] ?? "";
   const inputUnavailable = trackInputId !== "" && !audioInputDevices.some((device) => device.id === trackInputId);
@@ -100,6 +107,31 @@ export function AudioDevicePopup({
             ))}
           </Dropdown>
         </label>
+      )}
+      {track.id === "mic" && (
+        <>
+          <label className="audio-device-select">
+            <span>Noise reduction</span>
+            <Dropdown
+              disabled={isRecordingActive}
+              value={track.noiseReduction}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (isNoiseReductionLevel(value)) {
+                  updateAudioTrack(track.id, { noiseReduction: value });
+                }
+              }}
+              aria-label={`${track.name} noise reduction`}
+            >
+              {NOISE_REDUCTION_LEVELS.map((level) => (
+                <option key={level} value={level}>{NOISE_REDUCTION_LABELS[level]}</option>
+              ))}
+            </Dropdown>
+          </label>
+          <p className="audio-device-hint">
+            Removes background hiss and rumble from the exported microphone track.
+          </p>
+        </>
       )}
       {audioInputError && <p className="audio-device-error" role="alert">{audioInputError}</p>}
     </div>,

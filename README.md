@@ -1,6 +1,6 @@
 # Babu Studio
 
-Babu Studio is a macOS desktop recording and streaming application. The React renderer configures one shared scene and layer list with independent placements in landscape and portrait previews; new layers start centered in both layouts at matching output-pixel sizes, then can be adjusted independently. Electron owns project files and IPC, and a separate C++ media-core process captures and timestamps media.
+Babu Studio is a macOS desktop recording and export application. The React renderer configures one shared scene and layer list with independent placements in landscape and portrait previews; new layers start centered in both layouts at matching output-pixel sizes, then can be adjusted independently. Electron owns project files and IPC, and a separate C++ media-core process captures and timestamps media.
 
 ## Requirements
 
@@ -8,6 +8,7 @@ Babu Studio is a macOS desktop recording and streaming application. The React re
 - Node.js 20 or newer and npm
 - CMake 3.20 or newer
 - Xcode Command Line Tools
+- FFmpeg and `pkg-config`, for the native core's libav* libraries
 
 ## Getting started
 
@@ -16,15 +17,19 @@ npm install
 npm run dev
 ```
 
-The development command builds the C++ core before starting Electron. Recording writes selected capture-card video, webcam video, game audio, and microphone audio as separate synchronized tracks in `master.mkv` under `~/Movies/Babu Studio/recording-<id>/`. A `project.json` stores the shared scene, per-layout layer placements, capture settings, source timing information, and export state. When recording stops, the shared layer list is rendered with its landscape placements to `exports/horizontal.mp4` and its portrait placements to `exports/vertical.mp4`.
+The development command builds the C++ core before starting Electron. Recording writes selected capture-card video, webcam video, game audio, and microphone audio as separate synchronized tracks in `master.babu` under `~/Movies/Babu Studio/recording-<id>/`. A `project.babu` stores the shared scene, per-layout layer placements, capture settings, source timing information, and export state. When recording stops, the shared layer list is rendered with its landscape placements to `exports/horizontal.mp4` and its portrait placements to `exports/vertical.mp4`.
 
-In both exports, microphone audio is compressed and boosted, and game audio is ducked while the microphone is active so speech stays in the foreground. The original source tracks remain separate in `master.mkv`.
+In both exports, microphone audio is compressed and boosted so speech stays in the foreground, and game audio holds a constant level underneath it; the combined mix is limited to prevent clipping. The original source tracks remain separate in `master.babu`.
+
+Mixer levels run from 0% to 200%. 100% matches the level the source was captured at, and anything above it boosts that track in the export, so a quiet capture card or microphone can be raised without re-recording. The live capture-card monitor follows the same level, and the recorded master file always keeps the untouched source tracks.
+
+The microphone track has a **Noise reduction** setting (Off, Low, Medium, High) in its settings popup. It runs a high-pass filter to drop rumble and an FFT denoiser to remove hiss, leaving the voice band largely untouched. Like the mixer levels it is applied while exporting, so the master file keeps the raw microphone track.
 
 Scenes, layers and their placements, audio mixer settings, export layouts and quality, and preview visibility are saved to `studio-config.json` in Electron's user-data directory. Existing scene and audio settings stored in the previous browser-based format are imported the first time the file is created.
 
 Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox encoder on macOS. Packaged apps include their own FFmpeg, so users install nothing else. In development, post-processing invokes `ffmpeg` from `PATH`; set `BABU_STUDIO_FFMPEG_PATH` to use a specific executable. If VideoToolbox export fails, the app retries with `libx264`. Source recordings are kept if export fails.
 
-A live System Resources panel below the previews shows CPU, GPU, memory, and disk usage once per second. GPU utilization is read from macOS (`ioreg`) and shows N/A where unavailable; disk shows percent used with used and remaining space.
+A live System Resources panel in the top bar shows CPU, GPU, memory, and disk usage once per second. Hovering it opens a popup with per-application CPU and memory usage and advice on which heavy background apps can be closed. GPU utilization is read from macOS (`ioreg`) and shows N/A where unavailable; disk shows percent used with used and remaining space.
 
 ## Useful commands
 

@@ -37,15 +37,19 @@ export function getCroppedVideoStyle(
   crop: CropInsets,
   sourceWidth: number,
   sourceHeight: number,
+  containerAspectRatio: number,
 ): CSSProperties {
   const fractions = getCropFractions(crop, sourceWidth, sourceHeight);
+  const croppedWidth = sourceWidth * fractions.visibleWidth;
+  const croppedHeight = sourceHeight * fractions.visibleHeight;
+  const scale = Math.min(containerAspectRatio / croppedWidth, 1 / croppedHeight);
 
   return {
     position: "absolute",
-    left: `${-fractions.left / fractions.visibleWidth * 100}%`,
-    top: `${-fractions.top / fractions.visibleHeight * 100}%`,
-    width: `${100 / fractions.visibleWidth}%`,
-    height: `${100 / fractions.visibleHeight}%`,
+    left: `${(containerAspectRatio / 2 - (sourceWidth * fractions.left + croppedWidth / 2) * scale) / containerAspectRatio * 100}%`,
+    top: `${(0.5 - (sourceHeight * fractions.top + croppedHeight / 2) * scale) * 100}%`,
+    width: `${sourceWidth * scale / containerAspectRatio * 100}%`,
+    height: `${sourceHeight * scale * 100}%`,
   };
 }
 

@@ -3,105 +3,347 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Babu Studio — Record and stream for macOS</title>
-  <meta name="description" content="Babu Studio records capture card, webcam and audio in sync and exports landscape and portrait videos. Free for macOS.">
+  <title>Babu Studio — Record once, publish in landscape and portrait (macOS)</title>
+  <meta name="description" content="Babu Studio is a free macOS recorder for capture card, webcam and microphone. Record once and export 16:9 landscape and 9:16 vertical videos in one pass, up to 4K.">
+  <meta name="theme-color" content="#0b0f0d">
+  <link rel="canonical" href="https://babu-studios.github.io/babu-studio-app/">
   <link rel="icon" href="icon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Babu Studio">
+  <meta property="og:title" content="Babu Studio — Record once, publish in landscape and portrait">
+  <meta property="og:description" content="Free macOS recorder for capture card, webcam and microphone. Export 16:9 and 9:16 videos in one pass, up to 4K.">
+  <meta property="og:url" content="https://babu-studios.github.io/babu-studio-app/">
+  <meta property="og:image" content="https://babu-studios.github.io/babu-studio-app/screenshots/01-dual-preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Babu Studio — Record once, publish in landscape and portrait">
+  <meta name="twitter:description" content="Free macOS recorder for capture card, webcam and microphone. Export 16:9 and 9:16 videos in one pass, up to 4K.">
+  <meta name="twitter:image" content="https://babu-studios.github.io/babu-studio-app/screenshots/01-dual-preview.jpg">
+
   <link rel="stylesheet" href="style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Babu Studio",
+    "operatingSystem": "macOS 12 or newer",
+    "applicationCategory": "MultimediaApplication",
+    "description": "Records capture card, webcam and microphone in sync and exports landscape and portrait videos in one pass.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "url": "https://babu-studios.github.io/babu-studio-app/",
+    "downloadUrl": "https://github.com/babu-studios/babu-studio-app/releases/latest"
+  }
+  </script>
 </head>
 <body>
-  <header class="hero">
-    <img class="logo" src="icon.png" alt="Babu Studio logo" width="128" height="128">
-    <h1>Babu Studio</h1>
-    <p class="tagline">Record your capture card, webcam and microphone in sync, then export landscape and portrait videos in one go.</p>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-    <div class="downloads">
-      <a class="button primary" id="download-main" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-arm64.dmg">Download for Apple Silicon</a>
-      <a class="button" id="download-alt" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-x64.dmg">Download for Intel Mac</a>
+  <header class="site-header" id="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top" aria-label="Babu Studio home">
+        <img src="icon.png" alt="" width="32" height="32">
+        <span>Babu Studio</span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#videos">Demo</a>
+        <a href="#install">Install</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/babu-studios/babu-studio-app">GitHub</a>
+      </nav>
+      <a class="button primary small" href="#download">Download</a>
     </div>
-    <p class="note">Free · macOS 12 or newer · <a href="https://github.com/babu-studios/babu-studio-app/releases">All releases</a></p>
-    <p class="note" id="chip-hint">Not sure which one? Click the Apple menu → <strong>About This Mac</strong>. If it says “Chip: Apple M…”, choose Apple Silicon. If it says “Processor: Intel”, choose Intel.</p>
   </header>
 
-  <main>
-    <section id="install">
-      <h2>Install</h2>
-      <ol class="steps">
-        <li><strong>Download</strong> the <code>.dmg</code> that matches your Mac.</li>
-        <li><strong>Open</strong> the <code>.dmg</code> and drag <strong>Babu Studio</strong> into <strong>Applications</strong>.</li>
-        <li><strong>First launch:</strong> macOS will warn that it can’t verify the app. Follow <a href="#allow">Allow the app to open</a> below. You only do this once.</li>
-        <li><strong>Grant access</strong> to the camera and microphone when asked, so the app can list and capture your devices.</li>
-      </ol>
-      <p>FFmpeg is included. You don’t need to install anything else.</p>
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="container hero-inner">
+        <p class="eyebrow">Free &amp; open source · macOS</p>
+        <h1>Record once.<br><span class="gradient-text">Publish in landscape and portrait.</span></h1>
+        <p class="lead">Babu Studio records your capture card, webcam and microphone in sync, then exports horizontal 16:9 and vertical 9:16 videos in a single pass.</p>
+
+        <div class="downloads" id="download">
+          <a class="button primary large" data-dl-main="hero" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-arm64.dmg">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 19h16"/></svg>
+            Download for Apple Silicon
+          </a>
+          <a class="button large" data-dl-alt="hero" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-x64.dmg">Download for Intel Mac</a>
+        </div>
+        <p class="note">Free · macOS 12 or newer · <a href="https://github.com/babu-studios/babu-studio-app/releases">All releases</a></p>
+        <p class="note small-note">Not sure which one? Click the Apple menu → <strong>About This Mac</strong>. “Chip: Apple M…” means Apple Silicon. “Processor: Intel” means Intel.</p>
+
+        <figure class="hero-shot">
+          <img src="screenshots/01-dual-preview.jpg" alt="Babu Studio showing a landscape 16:9 and a portrait 9:16 live preview side by side" width="2200" height="1375" fetchpriority="high">
+        </figure>
+
+        <ul class="highlights" aria-label="Highlights">
+          <li><strong>16:9 + 9:16</strong><span>recorded together</span></li>
+          <li><strong>Up to 4K</strong><span>export quality</span></li>
+          <li><strong>FFmpeg included</strong><span>nothing else to install</span></li>
+          <li><strong>Free</strong><span>and open source</span></li>
+        </ul>
+      </div>
     </section>
 
-    <section id="allow">
-      <h2>Allow the app to open</h2>
-      <p>Babu Studio is free and isn’t notarized by Apple yet, so macOS Gatekeeper blocks the first launch. The app is open source, and you can read the code in the <a href="https://github.com/babu-studios/babu-studio-app">repository</a>. Pick the option for your macOS version.</p>
+    <section class="section" id="features">
+      <div class="container">
+        <p class="kicker">Features</p>
+        <h2>Everything you need to record once and publish twice</h2>
+        <p class="section-intro">Built for creators who stream or record gameplay with a capture card and a webcam, and publish to both YouTube and Shorts, Reels or TikTok.</p>
 
-      <h3>macOS 15 Sequoia or newer</h3>
-      <ol class="steps">
-        <li>Open <strong>Babu Studio</strong> from Applications. Click <strong>Done</strong> on the warning.</li>
-        <li>Open <strong>System Settings → Privacy &amp; Security</strong> and scroll to <strong>Security</strong>.</li>
-        <li>Next to “Babu Studio was blocked…”, click <strong>Open Anyway</strong> and confirm with your password or Touch ID.</li>
-        <li>Click <strong>Open</strong> when asked again.</li>
-      </ol>
-
-      <h3>macOS 14 Sonoma or older</h3>
-      <ol class="steps">
-        <li>In Applications, <strong>right-click</strong> (or Control-click) <strong>Babu Studio</strong>.</li>
-        <li>Choose <strong>Open</strong>, then click <strong>Open</strong> in the dialog.</li>
-      </ol>
-
-      <h3>Terminal (any version)</h3>
-      <p>If the steps above don’t work, remove the download quarantine flag:</p>
-      <pre><code>xattr -dr com.apple.quarantine "/Applications/Babu Studio.app"</code></pre>
-
-      <p class="note">Don’t change “Allow applications from” to “Anywhere”. Only the single app needs to be allowed, as above.</p>
+        <div class="feature-grid">
+          <article class="card">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="13" height="10" rx="2"/><rect x="17" y="3" width="5" height="9" rx="1.5"/></svg></span>
+            <h3>Two formats, one recording</h3>
+            <p>Landscape 16:9 and portrait 9:16 previews update live side by side, so you frame both before you hit record.</p>
+          </article>
+          <article class="card">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+            <h3>Capture card and webcam</h3>
+            <p>Layer console or PC gameplay with your camera. Set resolution and crop each source in pixels.</p>
+          </article>
+          <article class="card">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg></span>
+            <h3>Clean audio</h3>
+            <p>A mixer with live levels, volume up to 200% and noise reduction for background hiss and rumble.</p>
+          </article>
+          <article class="card">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+            <h3>Resource monitor</h3>
+            <p>Live CPU, GPU, memory and disk readouts flag heavy apps to close first, so you avoid dropped frames.</p>
+          </article>
+          <article class="card">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L8 7m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg></span>
+            <h3>Export up to 4K</h3>
+            <p>Choose horizontal, vertical or both, pick a quality, and see the disk space needed before you start.</p>
+          </article>
+          <article class="card">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v6c0 4.4 3.4 7.4 8 8 4.6-.6 8-3.6 8-8V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+            <h3>Open source and verifiable</h3>
+            <p>Every release is built from public source by GitHub Actions, malware-scanned, and published with checksums.</p>
+          </article>
+        </div>
+      </div>
     </section>
 
-    <section id="security">
-      <h2>Security and verification</h2>
-      <p>Every release is built from the public source by GitHub Actions, scanned for malware, and published with checksums. You can check your download yourself.</p>
-      <ul>
-        <li><strong>Malware scan:</strong> each release is scanned with ClamAV, and the log is attached as <a href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/clamav-scan.log"><code>clamav-scan.log</code></a>.</li>
-        <li><strong>VirusTotal:</strong> when enabled, the release notes link to the VirusTotal report for each installer. See the <a href="https://github.com/babu-studios/babu-studio-app/releases/latest">latest release</a>. An unsigned open-source app may get a flag or two from a few engines; these are usually false positives.</li>
-        <li><strong>Checksums:</strong> compare your download with <a href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/SHA256SUMS"><code>SHA256SUMS</code></a>.</li>
-        <li><strong>Build provenance:</strong> confirm the file was built by this repository’s workflow.</li>
-      </ul>
-      <pre><code>shasum -a 256 ~/Downloads/Babu-Studio-arm64.dmg
+    <section class="section alt" id="how">
+      <div class="container">
+        <p class="kicker">How it works</p>
+        <h2>From capture to upload in three steps</h2>
+        <ol class="how-steps">
+          <li>
+            <span class="step-num">1</span>
+            <h3>Connect your sources</h3>
+            <p>Add your capture card, camera and microphone as layers. Position and crop them once for both layouts.</p>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <h3>Record</h3>
+            <p>Hit <strong>Start Recording</strong>. Video and audio stay in sync while the monitor keeps an eye on your Mac.</p>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <h3>Export both formats</h3>
+            <p>Render landscape and portrait MP4s together, ready for YouTube, Shorts, Reels and TikTok.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section" id="screenshots">
+      <div class="container">
+        <p class="kicker">Screenshots</p>
+        <h2>See it in action</h2>
+        <p class="section-intro">Set up your scene once, record, and export finished videos for every platform. Here is a quick tour of the app. Click any screenshot to view it full size.</p>
+
+        <div class="carousel" id="carousel" aria-roledescription="carousel" aria-label="Babu Studio screenshots">
+          <div class="carousel-track" id="carousel-track" tabindex="0">
+            <figure class="slide" id="slide-1">
+              <img src="screenshots/01-dual-preview.jpg" alt="Babu Studio showing a landscape 16:9 and a portrait 9:16 live preview side by side" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Record once, get two videos</strong><span>Landscape 16:9 and portrait 9:16 previews update live side by side, so you can frame both before you hit record.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-2">
+              <img src="screenshots/02-camera-layer.jpg" alt="Camera layer settings with device, resolution and crop" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Dial in your webcam</strong><span>Choose the camera, set the resolution up to Full HD, and crop the source in pixels to fit your layout.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-3">
+              <img src="screenshots/03-capture-card-layer.jpg" alt="Capture card layer settings with device, resolution and crop" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Bring in your capture card</strong><span>Add console or PC gameplay from an Elgato or any capture card, with its own resolution and crop settings.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-4">
+              <img src="screenshots/04-microphone.jpg" alt="Microphone settings with input device and noise reduction" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Clean microphone audio</strong><span>Watch the live input level, pick your mic, and turn on noise reduction to remove background hiss and rumble.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-5">
+              <img src="screenshots/05-capture-card-audio.jpg" alt="Capture card audio settings with input and output device" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Monitor game sound</strong><span>Route capture card audio to your speakers or headphones while you record, and mute it in the mix when you need to.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-6">
+              <img src="screenshots/06-system-resources.jpg" alt="System resource panel showing CPU, GPU, memory, disk and heavy apps" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Know your Mac is ready</strong><span>Live CPU, GPU, memory and disk readouts flag heavy apps to close first, so you avoid dropped frames.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-7">
+              <img src="screenshots/07-export-options.jpg" alt="Export dialog with horizontal and vertical options and quality" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Export the way you publish</strong><span>Pick any recording, choose horizontal, vertical or both, set quality up to 4K, and see the disk space needed first.</span></figcaption>
+            </figure>
+            <figure class="slide" id="slide-8">
+              <img src="screenshots/08-export-progress.jpg" alt="Export progress for landscape and portrait videos" width="2200" height="1375" loading="lazy">
+              <figcaption><strong>Both formats in one pass</strong><span>Landscape and portrait render together with clear progress, ready to upload to YouTube, Shorts, Reels and TikTok.</span></figcaption>
+            </figure>
+          </div>
+          <button class="carousel-btn prev" id="carousel-prev" type="button" aria-label="Previous screenshot">&#8249;</button>
+          <button class="carousel-btn next" id="carousel-next" type="button" aria-label="Next screenshot">&#8250;</button>
+        </div>
+        <div class="carousel-dots" id="carousel-dots" role="tablist" aria-label="Choose screenshot"></div>
+      </div>
+    </section>
+
+    <section class="section alt" id="videos">
+      <div class="container">
+        <p class="kicker">Demo</p>
+        <h2>Watch the demo</h2>
+        <p class="section-intro">The same recording, exported in both layouts.</p>
+        <!-- Set data-youtube-id to the video ID (the part after "v=" or after "youtu.be/" / "shorts/"). Leave empty to show a placeholder. -->
+        <div class="videos">
+          <div class="video-card landscape">
+            <h3>Landscape (16:9)</h3>
+            <div class="video-frame" data-youtube-id="p_hzGE4bXnA" data-title="Babu Studio landscape demo"></div>
+          </div>
+          <div class="video-card portrait">
+            <h3>Vertical (9:16)</h3>
+            <div class="video-frame" data-youtube-id="7kaQCAEyhUs" data-title="Babu Studio vertical demo"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="install">
+      <div class="container narrow">
+        <p class="kicker">Get started</p>
+        <h2>Install in a minute</h2>
+        <ol class="steps">
+          <li><strong>Download</strong> the <code>.dmg</code> that matches your Mac.</li>
+          <li><strong>Open</strong> the <code>.dmg</code> and drag <strong>Babu Studio</strong> into <strong>Applications</strong>.</li>
+          <li><strong>First launch:</strong> macOS will warn that it can’t verify the app. Follow <a href="#allow">Allow the app to open</a> below. You only do this once.</li>
+          <li><strong>Grant access</strong> to the camera and microphone when asked, so the app can list and capture your devices.</li>
+        </ol>
+        <p>FFmpeg is included. You don’t need to install anything else.</p>
+
+        <h3 id="allow" class="anchor-heading">Allow the app to open</h3>
+        <p>Babu Studio is free and isn’t notarized by Apple yet, so macOS Gatekeeper blocks the first launch. The app is open source, and you can read the code in the <a href="https://github.com/babu-studios/babu-studio-app">repository</a>. Pick the option for your macOS version.</p>
+
+        <details class="accordion" open>
+          <summary>macOS 15 Sequoia or newer</summary>
+          <ol class="steps">
+            <li>Open <strong>Babu Studio</strong> from Applications. Click <strong>Done</strong> on the warning.</li>
+            <li>Open <strong>System Settings → Privacy &amp; Security</strong> and scroll to <strong>Security</strong>.</li>
+            <li>Next to “Babu Studio was blocked…”, click <strong>Open Anyway</strong> and confirm with your password or Touch ID.</li>
+            <li>Click <strong>Open</strong> when asked again.</li>
+          </ol>
+        </details>
+        <details class="accordion">
+          <summary>macOS 14 Sonoma or older</summary>
+          <ol class="steps">
+            <li>In Applications, <strong>right-click</strong> (or Control-click) <strong>Babu Studio</strong>.</li>
+            <li>Choose <strong>Open</strong>, then click <strong>Open</strong> in the dialog.</li>
+          </ol>
+        </details>
+        <details class="accordion">
+          <summary>Terminal (any version)</summary>
+          <p>If the steps above don’t work, remove the download quarantine flag:</p>
+          <pre><code>xattr -dr com.apple.quarantine "/Applications/Babu Studio.app"</code></pre>
+        </details>
+        <p class="note-left">Don’t change “Allow applications from” to “Anywhere”. Only the single app needs to be allowed, as above.</p>
+      </div>
+    </section>
+
+    <section class="section alt" id="security">
+      <div class="container narrow">
+        <p class="kicker">Trust</p>
+        <h2>Security and verification</h2>
+        <p>Every release is built from the public source by GitHub Actions, scanned for malware, and published with checksums. You can check your download yourself.</p>
+        <ul class="check-list">
+          <li><strong>Malware scan:</strong> each release is scanned with ClamAV, and the log is attached as <a href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/clamav-scan.log"><code>clamav-scan.log</code></a>.</li>
+          <li><strong>VirusTotal:</strong> when enabled, the release notes link to the VirusTotal report for each installer. See the <a href="https://github.com/babu-studios/babu-studio-app/releases/latest">latest release</a>. An unsigned open-source app may get a flag or two from a few engines; these are usually false positives.</li>
+          <li><strong>Checksums:</strong> compare your download with <a href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/SHA256SUMS"><code>SHA256SUMS</code></a>.</li>
+          <li><strong>Build provenance:</strong> confirm the file was built by this repository’s workflow.</li>
+        </ul>
+        <pre><code>shasum -a 256 ~/Downloads/Babu-Studio-arm64.dmg
 gh attestation verify ~/Downloads/Babu-Studio-arm64.dmg --repo babu-studios/babu-studio-app</code></pre>
+      </div>
     </section>
 
-    <section>
-      <h2>Troubleshooting</h2>
-      <ul>
-        <li><strong>“Babu Studio is damaged and can’t be opened”:</strong> run the Terminal command above.</li>
-        <li><strong>No camera or microphone listed:</strong> open <strong>System Settings → Privacy &amp; Security → Camera / Microphone</strong> and turn on Babu Studio, then restart the app.</li>
-        <li><strong>Wrong download:</strong> the Intel build runs on Apple Silicon only through Rosetta and is slower. Use the build that matches your chip.</li>
-        <li>Still stuck? <a href="https://github.com/babu-studios/babu-studio-app/issues">Open an issue</a>.</li>
-      </ul>
+    <section class="section" id="faq">
+      <div class="container narrow">
+        <p class="kicker">FAQ</p>
+        <h2>Questions and troubleshooting</h2>
+        <details class="accordion">
+          <summary>Is Babu Studio really free?</summary>
+          <p>Yes. It is free and open source. You can read and build the code from the <a href="https://github.com/babu-studios/babu-studio-app">GitHub repository</a>.</p>
+        </details>
+        <details class="accordion">
+          <summary>Which download should I choose?</summary>
+          <p>Use the build that matches your chip. The Intel build runs on Apple Silicon only through Rosetta and is slower.</p>
+        </details>
+        <details class="accordion">
+          <summary>Do I need to install FFmpeg?</summary>
+          <p>No. FFmpeg and the libraries it needs are bundled with the app.</p>
+        </details>
+        <details class="accordion">
+          <summary>“Babu Studio is damaged and can’t be opened”</summary>
+          <p>Run the Terminal command from <a href="#allow">Allow the app to open</a> to remove the quarantine flag.</p>
+        </details>
+        <details class="accordion">
+          <summary>No camera or microphone is listed</summary>
+          <p>Open <strong>System Settings → Privacy &amp; Security → Camera / Microphone</strong>, turn on Babu Studio, then restart the app.</p>
+        </details>
+        <details class="accordion">
+          <summary>Something else is wrong</summary>
+          <p><a href="https://github.com/babu-studios/babu-studio-app/issues">Open an issue</a> with your macOS version, chip, capture devices, and steps to reproduce.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container cta-inner">
+        <h2>Ready to record once and publish everywhere?</h2>
+        <p>Download Babu Studio for free and export landscape and portrait videos from a single recording.</p>
+        <div class="downloads">
+          <a class="button primary large" data-dl-main="cta" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-arm64.dmg">Download for Apple Silicon</a>
+          <a class="button large" data-dl-alt="cta" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-x64.dmg">Download for Intel Mac</a>
+        </div>
+      </div>
     </section>
   </main>
 
-  <footer>
-    <p>Developed by <a href="https://www.instagram.com/b4babugaming/">@b4babugaming</a> · <a href="https://github.com/babu-studios/babu-studio-app">Source on GitHub</a> · <a href="https://github.com/babu-studios/babu-studio-app/blob/main/CONTRIBUTING.md">Contribute</a></p>
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="brand">
+        <img src="icon.png" alt="" width="28" height="28">
+        <span>Babu Studio</span>
+      </div>
+      <p>Developed by <a href="https://www.instagram.com/b4babugaming/">@b4babugaming</a></p>
+      <p class="footer-links">
+        <a href="https://github.com/babu-studios/babu-studio-app">Source on GitHub</a>
+        <a href="https://github.com/babu-studios/babu-studio-app/releases">Releases</a>
+        <a href="https://github.com/babu-studios/babu-studio-app/blob/main/CONTRIBUTING.md">Contribute</a>
+        <a href="https://github.com/babu-studios/babu-studio-app/issues">Report an issue</a>
+      </p>
+    </div>
   </footer>
 
-  <script>
-    // Recommend the build for the visitor's Mac when the browser can tell us.
-    (function () {
-      var canvas = document.createElement("canvas");
-      var gl = canvas.getContext("webgl");
-      var info = gl && gl.getExtension("WEBGL_debug_renderer_info");
-      var renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "";
-      if (/Intel/i.test(renderer) && !/Apple/i.test(renderer)) {
-        var main = document.getElementById("download-main");
-        var alt = document.getElementById("download-alt");
-        var href = main.href, label = main.textContent;
-        main.href = alt.href; main.textContent = alt.textContent;
-        alt.href = href; alt.textContent = label;
-      }
-    })();
-  </script>
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Screenshot full view" hidden>
+    <button class="lightbox-btn close" id="lightbox-close" type="button" aria-label="Close full view">&times;</button>
+    <button class="lightbox-btn prev" id="lightbox-prev" type="button" aria-label="Previous screenshot">&#8249;</button>
+    <figure>
+      <img id="lightbox-img" alt="">
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+    <button class="lightbox-btn next" id="lightbox-next" type="button" aria-label="Next screenshot">&#8250;</button>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 </html>

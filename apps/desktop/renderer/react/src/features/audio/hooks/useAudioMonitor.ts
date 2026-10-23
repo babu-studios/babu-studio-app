@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { AudioTrack } from "@/features/studio/types/studio.types";
 
+// Chromium exposes AudioContext.setSinkId, but the DOM typings do not cover it yet.
+type RoutableAudioContext = AudioContext & {
+  setSinkId?: (sinkId: string) => Promise<void>;
+};
+
+type RoutedOutput = {
+  context: RoutableAudioContext;
+  gain: GainNode;
+};
+
 type UseAudioMonitorOptions = {
   audioReloadToken: number;
   audioMonitoringEnabled: boolean;
@@ -22,16 +32,51 @@ export function useAudioMonitor({
 }: UseAudioMonitorOptions) {
   const [audioMeterLevels, setAudioMeterLevels] = useState<Record<string, number>>({});
   const audioPlaybackRef = useRef<Record<string, HTMLAudioElement>>({});
+  const audioStreamsRef = useRef<Record<string, MediaStream>>({});
+  const audioRoutedRef = useRef<Record<string, RoutedOutput>>({});
   const audioPlaybackSettingsRef = useRef({ outputIds: audioTrackOutputIds, tracks: audioTracks });
   audioPlaybackSettingsRef.current = { outputIds: audioTrackOutputIds, tracks: audioTracks };
 
   async function applyAudioPlaybackSettings(trackId: string): Promise<void> {
-    const playback = audioPlaybackRef.current[trackId];
     const track = audioPlaybackSettingsRef.current.tracks.find((item) => item.id === trackId);
-    if (!playback || !track) {
+    if (!track) {
       return;
     }
     const outputId = audioPlaybackSettingsRef.current.outputIds[trackId] ?? "";
+    const gain = track.muted || !outputId ? 0 : track.volume / 100;
+
+    // Web Audio can exceed unity gain, unlike a media element, so it is the preferred path.
+    const routed = audioRoutedRef.current[trackId];
+    if (routed) {
+      if (routed.context.setSinkId) {
+        try {
+          if (outputId) {
+            await routed.context.setSinkId(outputId);
+          }
+          routed.gain.gain.value = gain;
+          return;
+        } catch (error) {
+          console.error("Unable to route audio through the Web Audio output:", error);
+        }
+      }
+      routed.gain.disconnect();
+      delete audioRoutedRef.current[trackId];
+    }
+
+    // Fallback for contexts that cannot pick an output device. Media elements cap at unity gain.
+    const stream = audioStreamsRef.current[trackId];
+    if (!stream) {
+      return;
+    }
+    let playback = audioPlaybackRef.current[trackId];
+    if (!playback) {
+      playback = new Audio();
+      playback.srcObject = stream;
+      audioPlaybackRef.current[trackId] = playback;
+      void playback.play().catch((error: unknown) => {
+        console.error("Unable to play capture card audio:", error);
+      });
+    }
     playback.muted = track.muted || !outputId;
     playback.volume = Math.max(0, Math.min(1, track.volume / 100));
     try {
@@ -44,6 +89,7 @@ export function useAudioMonitor({
 
   useEffect(() => {
     Object.keys(audioPlaybackRef.current).forEach((trackId) => void applyAudioPlaybackSettings(trackId));
+    Object.keys(audioRoutedRef.current).forEach((trackId) => void applyAudioPlaybackSettings(trackId));
   }, [audioTrackOutputIds, audioTracks]);
 
   const audioMonitorKey = JSON.stringify([
@@ -101,27 +147,25 @@ export function useAudioMonitor({
           return;
         }
 
-        if (trackId === "capture-card") {
-          const playback = new Audio();
-          playback.srcObject = stream;
-          audioPlaybackRef.current[trackId] = playback;
-          cleanups.push(() => {
-            playback.pause();
-            playback.srcObject = null;
-            delete audioPlaybackRef.current[trackId];
-          });
-          await applyAudioPlaybackSettings(trackId);
-          await playback.play().catch((error: unknown) => {
-            console.error("Unable to play capture card audio:", error);
-          });
-          if (cancelled) {
-            return;
-          }
-        }
-
+        const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 1024;
-        audioContext.createMediaStreamSource(stream).connect(analyser);
+        source.connect(analyser);
+
+        if (trackId === "capture-card") {
+          audioStreamsRef.current[trackId] = stream;
+          const gainNode = audioContext.createGain();
+          gainNode.gain.value = 0;
+          source.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          audioRoutedRef.current[trackId] = { context: audioContext, gain: gainNode };
+          cleanups.push(() => {
+            delete audioRoutedRef.current[trackId];
+            delete audioStreamsRef.current[trackId];
+          });
+          await applyAudioPlaybackSettings(trackId);
+        }
+
         const samples = new Float32Array(analyser.fftSize);
         let smoothedLevel = 0;
         let lastUpdateTime = 0;
@@ -163,6 +207,12 @@ export function useAudioMonitor({
     return () => {
       cancelled = true;
       cleanups.forEach((cleanup) => cleanup());
+      Object.keys(audioPlaybackRef.current).forEach((trackId) => {
+        const playback = audioPlaybackRef.current[trackId];
+        playback.pause();
+        playback.srcObject = null;
+        delete audioPlaybackRef.current[trackId];
+      });
     };
   }, [audioMonitorKey]);
 

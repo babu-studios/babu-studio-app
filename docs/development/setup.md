@@ -6,6 +6,7 @@
 - Node.js 20 or newer with npm
 - CMake 3.20 or newer
 - Xcode Command Line Tools, including Apple Clang
+- FFmpeg and `pkg-config`, for the native core's libav* libraries
 
 ## Install and run
 
@@ -26,6 +27,8 @@ npm run test:core
 npm run build
 npm run package:mac
 ```
+
+`npm run release:mac [patch|minor|major|x.y.z]` bumps the version, deletes `release/` and the previous build outputs, and then runs `npm run package:mac`.
 
 `npm run package:mac` builds the native core, bundles it with FFmpeg (`scripts/bundle-media-tools.mjs`), and produces an ad-hoc signed macOS installer. The bundle (`core/build/bundle`) contains `creator-media-core`, `ffmpeg`, `ffprobe`, and every non-system dylib they need with relative load paths, so end users do not install FFmpeg or Homebrew. The packaged app points `BABU_STUDIO_FFMPEG_PATH` and `BABU_STUDIO_FFPROBE_PATH` at the bundled tools.
 

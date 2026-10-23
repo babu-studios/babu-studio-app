@@ -1,3 +1,8 @@
+import {
+  DEFAULT_NOISE_REDUCTION,
+  isNoiseReductionLevel,
+  MAX_AUDIO_VOLUME_PERCENT,
+} from "@shared/constants/media.constants";
 import { DEFAULT_AUDIO_MIXER } from "@/features/studio/constants/audio";
 import { DEFAULT_CAPTURE_RESOLUTION, DEFAULT_CROP_INSETS, ICON_NAMES, LAYER_KINDS } from "@/features/studio/constants/layers";
 import { OUTPUTS } from "@/features/studio/constants/outputs";
@@ -22,7 +27,8 @@ export function loadAudioMixer(savedValue: unknown): PersistedAudioMixer {
           id: track.id,
           name: track.name,
           icon: "audio",
-          volume: Math.max(0, Math.min(100, track.volume)),
+          volume: Math.max(0, Math.min(MAX_AUDIO_VOLUME_PERCENT, track.volume)),
+          noiseReduction: isNoiseReductionLevel(track.noiseReduction) ? track.noiseReduction : DEFAULT_NOISE_REDUCTION,
           muted: track.muted,
         }]
         : []
