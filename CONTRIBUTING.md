@@ -48,9 +48,18 @@ npm run package:mac
 
 This builds the core, bundles it with FFmpeg and its libraries, and writes an ad-hoc signed `.dmg` and `.zip` to `release/`. The installer matches the architecture of the Mac you build on.
 
+To bump the version and produce a fresh installer in one step, run:
+
+```sh
+npm run release:mac            # patch bump (default)
+npm run release:mac -- minor   # or major, or an explicit version like 1.2.3
+```
+
+This updates `version` in the root, Electron, and renderer `package.json` files and `package-lock.json`, deletes `release/`, `core/build/`, and `apps/desktop/electron/out/`, then runs `npm run package:mac`. Installers keep the version-less name `Babu-Studio-<arch>.dmg`.
+
 ## Releasing (maintainers)
 
-1. Update `version` in the root `package.json` and `apps/desktop/electron/package.json`.
+1. Update the version with `npm run release:mac` (or edit `version` in the root `package.json`, `apps/desktop/electron/package.json`, and `apps/desktop/renderer/react/package.json`).
 2. Merge to `main`, then tag and push:
 
    ```sh
@@ -62,7 +71,7 @@ This builds the core, bundles it with FFmpeg and its libraries, and writes an ad
 
 The workflow also scans the installers with ClamAV, attaches `SHA256SUMS` and `clamav-scan.log`, and publishes build attestations. To add VirusTotal report links to the release notes, add a free VirusTotal API key as the `VT_API_KEY` repository secret. Without it that step is skipped.
 
-The website in [website/](website) deploys to GitHub Pages from `main`. Enable it once under **Settings → Pages → Source: GitHub Actions**.
+The website in [website/](website) deploys to GitHub Pages from `main`. Enable it once under **Settings → Pages → Source: GitHub Actions**. To preview it locally, run `npm run website` and open http://localhost:8765/. Don't open `index.html` from disk, because YouTube embeds fail on `file://` pages.
 
 ## Reporting bugs
 
