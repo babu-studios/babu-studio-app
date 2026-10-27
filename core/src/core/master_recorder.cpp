@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -34,6 +35,34 @@ std::string av_message(const int code) {
 
 void release_buffer(void*, std::uint8_t* data) { release_native_video_frame(data); }
 
+// Video sources record as Matroska, audio sources as M4A.
+std::string source_file_name(const std::string& track_name, const bool video) {
+  if (track_name == "Gameplay") {
+    return "gameplay.mkv";
+  }
+  if (track_name == "Webcam") {
+    return "webcam.mkv";
+  }
+  if (track_name == "Game Audio") {
+    return "game-audio.m4a";
+  }
+  if (track_name == "Microphone") {
+    return "microphone.m4a";
+  }
+  std::string slug;
+  for (const char c : track_name) {
+    if (c == ' ' || c == '_') {
+      slug += '-';
+    } else {
+      slug += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+  }
+  if (slug.empty()) {
+    slug = video ? "video" : "audio";
+  }
+  return slug + (video ? ".mkv" : ".m4a");
+}
+
 }  // namespace
 
 const char* to_string(const RecordingState state) {
@@ -57,6 +86,9 @@ struct MasterRecorder::Track {
   bool synthetic = false;
   bool zero_copy = false;
   std::string name;
+  std::string file_name;
+  std::string file_path;
+  AVFormatContext* format = nullptr;
   std::string device_name;
   int width = 0;
   int height = 0;
@@ -91,6 +123,13 @@ struct MasterRecorder::Track {
     if (audio_source) {
       audio_source->stop();
     }
+    if (format != nullptr) {
+      if (format->pb != nullptr) {
+        avio_closep(&format->pb);
+      }
+      avformat_free_context(format);
+      format = nullptr;
+    }
     av_frame_free(&frame);
     av_frame_free(&input_frame);
     av_packet_free(&packet);
@@ -107,6 +146,11 @@ MasterRecorder::~MasterRecorder() {
 
 bool MasterRecorder::open_encoder(Track& track, std::string& error) {
   const bool video = track.kind == Track::Kind::Video;
+  int result = avformat_alloc_output_context2(&track.format, nullptr, video ? "matroska" : "mp4", track.file_path.c_str());
+  if (result < 0 || track.format == nullptr) {
+    error = "Could not create " + track.file_path + ": " + av_message(result);
+    return false;
+  }
   const AVCodec* hardware_video_codec = video ? avcodec_find_encoder_by_name("h264_videotoolbox") : nullptr;
   const AVCodec* software_video_codec = video ? avcodec_find_encoder_by_name("libx264") : nullptr;
   if (video && software_video_codec == nullptr) {
@@ -120,7 +164,7 @@ bool MasterRecorder::open_encoder(Track& track, std::string& error) {
     return false;
   }
 
-  track.stream = avformat_new_stream(format_, nullptr);
+  track.stream = avformat_new_stream(track.format, nullptr);
   track.packet = av_packet_alloc();
   if (!track.stream || !track.packet) {
     error = "Out of memory while creating the " + track.name + " track.";
@@ -174,7 +218,7 @@ bool MasterRecorder::open_encoder(Track& track, std::string& error) {
       ctx->time_base = AVRational{1, kSampleRate};
       av_channel_layout_default(&ctx->ch_layout, 2);
     }
-    if (format_->oformat->flags & AVFMT_GLOBALHEADER) {
+    if (track.format->oformat->flags & AVFMT_GLOBALHEADER) {
       ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
 
@@ -192,7 +236,7 @@ bool MasterRecorder::open_encoder(Track& track, std::string& error) {
   }
 
   AVCodecContext* ctx = track.encoder;
-  int result = avcodec_parameters_from_context(track.stream->codecpar, ctx);
+  result = avcodec_parameters_from_context(track.stream->codecpar, ctx);
   if (result < 0) {
     error = av_message(result);
     return false;
@@ -236,6 +280,16 @@ bool MasterRecorder::open_encoder(Track& track, std::string& error) {
   }
   if (result < 0) {
     error = av_message(result);
+    return false;
+  }
+  result = avio_open(&track.format->pb, track.file_path.c_str(), AVIO_FLAG_WRITE);
+  if (result < 0) {
+    error = "Cannot open " + track.file_path + " for writing: " + av_message(result);
+    return false;
+  }
+  result = avformat_write_header(track.format, nullptr);
+  if (result < 0) {
+    error = "Could not write the header for " + track.file_name + ": " + av_message(result);
     return false;
   }
   return true;
@@ -317,7 +371,13 @@ bool MasterRecorder::start(const RecordingConfig& config, std::string& error) {
   if (fs_error) {
     return fail_start("Cannot create output directory: " + fs_error.message());
   }
-  file_path_ = (std::filesystem::path(config.output_directory) / config.master_file_name).string();
+  for (auto& track : tracks_) {
+    track->file_name = source_file_name(track->name, track->kind == Track::Kind::Video);
+    track->file_path = (std::filesystem::path(config.output_directory) / track->file_name).string();
+  }
+  if (!tracks_.empty()) {
+    file_path_ = tracks_.front()->file_path;
+  }
 
   // Open every device first so a missing device fails before any file is created.
   for (auto& track : tracks_) {
@@ -345,23 +405,11 @@ bool MasterRecorder::start(const RecordingConfig& config, std::string& error) {
     }
   }
 
-  int result = avformat_alloc_output_context2(&format_, nullptr, "matroska", file_path_.c_str());
-  if (result < 0 || format_ == nullptr) {
-    return fail_start("Could not create the MKV muxer: " + av_message(result));
-  }
   for (auto& track : tracks_) {
     std::string track_error;
     if (!open_encoder(*track, track_error)) {
       return fail_start(track_error);
     }
-  }
-  result = avio_open(&format_->pb, file_path_.c_str(), AVIO_FLAG_WRITE);
-  if (result < 0) {
-    return fail_start("Cannot open " + file_path_ + " for writing: " + av_message(result));
-  }
-  result = avformat_write_header(format_, nullptr);
-  if (result < 0) {
-    return fail_start("Could not write the MKV header: " + av_message(result));
   }
 
   clock_.start();
@@ -418,7 +466,7 @@ bool MasterRecorder::encode(Track& track, const bool flush) {
     av_packet_rescale_ts(track.packet, track.encoder->time_base, track.stream->time_base);
     track.packet->stream_index = track.stream->index;
     std::lock_guard lock(mux_mutex_);
-    result = av_interleaved_write_frame(format_, track.packet);
+    result = av_interleaved_write_frame(track.format, track.packet);
     if (result < 0) {
       fail("Write failure (disk full or removed?): " + av_message(result));
       return false;
@@ -690,10 +738,16 @@ RecordingInfo MasterRecorder::snapshot_locked() const {
   const std::int64_t duration_us = active_ ? clock_.now_us() : 0;
   result.duration_ms = duration_us / 1000;
   for (const auto& track : tracks_) {
+    const std::string kind = track->kind == Track::Kind::Video ? "video" : "audio";
     (track->kind == Track::Kind::Video ? result.video_tracks : result.audio_tracks).push_back(track->name);
+    SourceFile file;
+    file.name = track->name;
+    file.kind = kind;
+    file.path = track->file_path;
+    result.source_files.push_back(std::move(file));
     TrackStat stat;
     stat.name = track->name;
-    stat.kind = track->kind == Track::Kind::Video ? "video" : "audio";
+    stat.kind = kind;
     stat.device = track->device_name;
     stat.codec = track->encoder != nullptr && track->encoder->codec != nullptr ? track->encoder->codec->name : "";
     stat.frames = track->frames_written;
@@ -707,9 +761,15 @@ RecordingInfo MasterRecorder::snapshot_locked() const {
     }
     result.track_stats.push_back(std::move(stat));
   }
-  std::error_code size_error;
-  const auto size = std::filesystem::file_size(file_path_, size_error);
-  result.file_size_bytes = size_error ? 0 : static_cast<std::int64_t>(size);
+  std::int64_t total_size = 0;
+  for (const auto& file : result.source_files) {
+    std::error_code size_error;
+    const auto size = std::filesystem::file_size(file.path, size_error);
+    if (!size_error) {
+      total_size += static_cast<std::int64_t>(size);
+    }
+  }
+  result.file_size_bytes = total_size;
   if (duration_us > 0) {
     result.write_mb_per_second = static_cast<double>(result.file_size_bytes) / 1048576.0 / (static_cast<double>(duration_us) / 1e6);
   }
@@ -765,10 +825,12 @@ RecordingInfo MasterRecorder::stop() {
     }
     encode(*track, true);
   }
-  if (format_ != nullptr) {
-    const int result = av_write_trailer(format_);
-    if (result < 0) {
-      fail("Could not finalize the MKV: " + av_message(result));
+  for (auto& track : tracks_) {
+    if (track->format != nullptr) {
+      const int trailer_result = av_write_trailer(track->format);
+      if (trailer_result < 0) {
+        fail("Could not finalize " + track->file_name + ": " + av_message(trailer_result));
+      }
     }
   }
   const std::int64_t duration_ms = capture_duration_ms;
@@ -789,9 +851,15 @@ RecordingInfo MasterRecorder::stop() {
   summary.file_path = file_path_;
   summary.mode = config_.mode;
   const auto seconds = static_cast<double>(duration_ms) / 1000.0;
-  std::error_code size_error;
-  const auto size = std::filesystem::file_size(file_path_, size_error);
-  summary.file_size_bytes = size_error ? 0 : static_cast<std::int64_t>(size);
+  std::int64_t total_size = 0;
+  for (const auto& file : summary.source_files) {
+    std::error_code size_error;
+    const auto size = std::filesystem::file_size(file.path, size_error);
+    if (!size_error) {
+      total_size += static_cast<std::int64_t>(size);
+    }
+  }
+  summary.file_size_bytes = total_size;
   summary.write_mb_per_second = seconds > 0 ? static_cast<double>(summary.file_size_bytes) / 1048576.0 / seconds : 0;
   for (auto& stat : summary.track_stats) {
     if (stat.kind == "video" && seconds > 0) {
@@ -808,14 +876,8 @@ RecordingInfo MasterRecorder::info() const {
 }
 
 void MasterRecorder::cleanup() {
+  // Each track closes its own output file in its destructor.
   tracks_.clear();
-  if (format_ != nullptr) {
-    if (format_->pb != nullptr) {
-      avio_closep(&format_->pb);
-    }
-    avformat_free_context(format_);
-    format_ = nullptr;
-  }
 }
 
 }  // namespace creator::core

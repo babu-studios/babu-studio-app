@@ -22,7 +22,7 @@ int main() {
                                      + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const std::string start_command = "START_RECORDING\tmode=HORIZONTAL\tfps=30\tgameVolume=1\tmicrophoneVolume=1"
                                       "\toutputDir="
-                                      + output_directory.string() + "\tfileName=master.mkv\tsynthetic=1";
+                                      + output_directory.string() + "\tsynthetic=1";
     const std::string started = media_core.handle_command(start_command);
     if (started.find("\"state\":\"RECORDING\"") == std::string::npos) {
       std::cerr << "Synthetic recording did not start: " << started << '\n';
@@ -60,9 +60,27 @@ int main() {
       std::filesystem::remove_all(output_directory);
       return 1;
     }
-    const auto master_file = output_directory / "master.mkv";
-    if (!std::filesystem::exists(master_file) || std::filesystem::file_size(master_file) == 0) {
-      std::cerr << "Synthetic recording did not write a master media file.\n";
+    // Every source is recorded to its own file: video as Matroska, audio as M4A.
+    if (stopped.find("\"sourceFiles\"") == std::string::npos
+        || stopped.find("gameplay.mkv") == std::string::npos
+        || stopped.find("webcam.mkv") == std::string::npos
+        || stopped.find("game-audio.m4a") == std::string::npos
+        || stopped.find("microphone.m4a") == std::string::npos) {
+      std::cerr << "Synthetic recording did not report one file per source: " << stopped << '\n';
+      std::filesystem::remove_all(output_directory);
+      return 1;
+    }
+    for (const char* file_name : {"gameplay.mkv", "webcam.mkv", "game-audio.m4a", "microphone.m4a"}) {
+      const auto source_file = output_directory / file_name;
+      if (!std::filesystem::exists(source_file) || std::filesystem::file_size(source_file) == 0) {
+        std::cerr << "Synthetic recording did not write source file " << file_name << ".\n";
+        std::filesystem::remove_all(output_directory);
+        return 1;
+      }
+    }
+    if (std::filesystem::exists(output_directory / "master.mkv")
+        || std::filesystem::exists(output_directory / "master.babu")) {
+      std::cerr << "Synthetic recording still wrote a single master file.\n";
       std::filesystem::remove_all(output_directory);
       return 1;
     }

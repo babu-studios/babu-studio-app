@@ -42,6 +42,15 @@ std::string json_array(const std::vector<std::string>& items) {
   return out + "]";
 }
 
+std::string source_files_json(const std::vector<SourceFile>& files) {
+  std::ostringstream out;
+  for (std::size_t i = 0; i < files.size(); ++i) {
+    out << (i ? "," : "") << "{\"name\":\"" << json_escape(files[i].name) << "\",\"kind\":\"" << files[i].kind
+        << "\",\"path\":\"" << json_escape(files[i].path) << "\"}";
+  }
+  return out.str();
+}
+
 std::string track_stats_json(const std::vector<TrackStat>& stats) {
   std::ostringstream out;
   for (std::size_t i = 0; i < stats.size(); ++i) {
@@ -114,16 +123,12 @@ RecordingConfig parse_config(const std::map<std::string, std::string>& fields) {
   config.capture_height = field_or(fields, "captureHeight", 1080, to_int);
   config.capture_exact_size = field_or(fields, "captureExactSize", 1, to_int) != 0;
   config.output_directory = field_or<std::string>(fields, "outputDir", "", [](const std::string& v) { return v; });
-  config.master_file_name = field_or<std::string>(fields, "fileName", "master.mkv", [](const std::string& v) { return v; });
 
   if (config.output_directory.empty()) {
     throw std::invalid_argument("outputDir is required");
   }
   if (config.fps < 1 || config.fps > 120 || config.webcam_fps < 1 || config.webcam_fps > 120) {
     throw std::invalid_argument("Unsupported FPS");
-  }
-  if (config.master_file_name.find('/') != std::string::npos || config.master_file_name.empty()) {
-    throw std::invalid_argument("Invalid master file name");
   }
   config.game_volume = std::clamp(config.game_volume, 0.0, kMaxAudioGain);
   config.microphone_volume = std::clamp(config.microphone_volume, 0.0, kMaxAudioGain);
@@ -138,6 +143,7 @@ std::string recording_info_to_json(const RecordingInfo& info) {
       << ",\"success\":" << (info.state == RecordingState::Error ? "false" : "true")
       << ",\"recordingMode\":\"" << to_string(info.mode) << "\""
       << ",\"filePath\":\"" << json_escape(info.file_path) << "\""
+      << ",\"sourceFiles\":[" << source_files_json(info.source_files) << "]"
       << ",\"durationMs\":" << info.duration_ms
       << ",\"fileSizeBytes\":" << info.file_size_bytes
       << ",\"droppedVideoFrames\":" << info.dropped_video_frames

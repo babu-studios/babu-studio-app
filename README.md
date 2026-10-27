@@ -17,9 +17,9 @@ npm install
 npm run dev
 ```
 
-The development command builds the C++ core before starting Electron. Recording writes selected capture-card video, webcam video, game audio, and microphone audio as separate synchronized tracks in `master.babu` under `~/Movies/Babu Studio/recording-<id>/`. A `project.babu` stores the shared scene, per-layout layer placements, capture settings, source timing information, and export state. When recording stops, the shared layer list is rendered with its landscape placements to `exports/horizontal.mp4` and its portrait placements to `exports/vertical.mp4`.
+The development command builds the C++ core before starting Electron. Recording writes each selected source to its own file under `~/Movies/Babu Studio/recording-<id>/`: capture-card video to `gameplay.mkv`, webcam video to `webcam.mkv`, game audio to `game-audio.m4a`, and microphone audio to `microphone.m4a`. The files stay synchronized on the capture clock. A `project.babu` stores the shared scene, per-layout layer placements, capture settings, source timing information, and export state. Takes recorded before per-source files keep a single `master.babu` and still open and export. When recording stops, the shared layer list is rendered with its landscape placements to `exports/horizontal.mp4` and its portrait placements to `exports/vertical.mp4`. The export picker can also render a small on-demand `exports/ai-preview.mp4` (540x960 vertical, same scene and mix) of any saved take for AI clip suggestions.
 
-In both exports, microphone audio is compressed and boosted so speech stays in the foreground, and game audio holds a constant level underneath it; the combined mix is limited to prevent clipping. The original source tracks remain separate in `master.babu`.
+In both exports, microphone audio is compressed and boosted so speech stays in the foreground, and game audio holds a constant level underneath it; the combined mix is limited to prevent clipping. The original per-source files are preserved unchanged.
 
 Mixer levels run from 0% to 200%. 100% matches the level the source was captured at, and anything above it boosts that track in the export, so a quiet capture card or microphone can be raised without re-recording. The live capture-card monitor follows the same level, and the recorded master file always keeps the untouched source tracks.
 

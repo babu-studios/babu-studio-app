@@ -39,7 +39,12 @@ struct RecordingConfig {
   bool microphone_enabled = true;
   bool synthetic = false;  // generated test sources instead of hardware
   std::string output_directory;
-  std::string master_file_name = "master.mkv";
+};
+
+struct SourceFile {
+  std::string name;
+  std::string kind;  // "video" or "audio"
+  std::string path;
 };
 
 struct TrackStat {
@@ -58,7 +63,10 @@ struct TrackStat {
 
 struct RecordingInfo {
   RecordingState state = RecordingState::Idle;
+  // Legacy single-file path. New recordings write one file per source (see
+  // source_files); this carries the first source file for older readers.
   std::string file_path;
+  std::vector<SourceFile> source_files;
   std::string error;
   std::int64_t duration_ms = 0;
   std::int64_t file_size_bytes = 0;
@@ -85,8 +93,9 @@ class MasterClock {
 const char* to_string(RecordingState state);
 const char* to_string(RecordingMode mode);
 
-// Writes ONE master.mkv holding gameplay video, webcam video, game audio and
-// microphone audio as separate, never-mixed tracks on a shared clock.
+// Writes ONE file per source (gameplay.mkv, webcam.mkv, game-audio.m4a,
+// microphone.m4a): video as Matroska, audio as M4A. Tracks stay separate and
+// never mixed, timestamped on a shared clock so exports stay in sync.
 class MasterRecorder {
  public:
   MasterRecorder();
@@ -116,7 +125,6 @@ class MasterRecorder {
   MasterClock clock_;
   mutable std::mutex mutex_;
   std::mutex mux_mutex_;
-  AVFormatContext* format_ = nullptr;
   std::vector<std::unique_ptr<Track>> tracks_;
   std::vector<std::thread> threads_;
   std::atomic<bool> running_{false};
