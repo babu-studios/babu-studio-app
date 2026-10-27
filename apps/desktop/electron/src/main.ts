@@ -1,13 +1,17 @@
 import { app, BrowserWindow, dialog, session, systemPreferences } from "electron";
 import { join, resolve } from "node:path";
 import { registerMediaCoreIpc } from "./ipc/media-core.ipc";
+import { registerAiCredentialsIpc } from "./ipc/ai-credentials.ipc";
 import { registerMediaAccessIpc } from "./ipc/media-access.ipc";
 import { registerSystemStatsIpc } from "./ipc/system-stats.ipc";
+import { AiCredentialsService } from "./services/ai-credentials.service";
+import { setModelApiKeyResolver } from "./services/ai-highlights.provider";
 import { MediaCoreService } from "./services/media-core.service";
 import { RecordingService } from "./services/recording.service";
 import { registerStudioConfigIpc } from "./ipc/studio-config.ipc";
 import { StudioConfigService } from "./services/studio-config.service";
 import { createMainWindow } from "./services/window.service";
+import { EXPORT_RESOLUTIONS } from "@shared/constants/media.constants";
 
 const mediaCore = new MediaCoreService();
 const recording = new RecordingService(mediaCore);
@@ -37,6 +41,9 @@ app.whenReady().then(async () => {
   registerMediaAccessIpc();
   registerSystemStatsIpc();
   registerStudioConfigIpc(new StudioConfigService(join(app.getPath("userData"), "studio-config.json")));
+  const aiCredentials = new AiCredentialsService(join(app.getPath("userData"), "ai-credentials.json"));
+  registerAiCredentialsIpc(aiCredentials);
+  setModelApiKeyResolver(() => aiCredentials.resolveKey());
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const origin = "securityOrigin" in details
       ? details.securityOrigin ?? webContents.getURL()
@@ -82,22 +89,91 @@ app.whenReady().then(async () => {
       if (!mediaCoreReady) {
         throw new Error("The media core did not start; cannot run the synthetic flow test.");
       }
-      const durationMs = Number(process.env.BABU_STUDIO_FLOW_TEST_DURATION_MS ?? 60_000);
       const exportModes = (process.env.BABU_STUDIO_FLOW_TEST_EXPORTS ?? "HORIZONTAL,VERTICAL")
         .split(",")
         .map((mode) => mode.trim())
         .filter((mode): mode is "HORIZONTAL" | "VERTICAL" => mode === "HORIZONTAL" || mode === "VERTICAL");
-      const outputDirectory = process.env.BABU_STUDIO_FLOW_TEST_OUTPUT_DIR;
-      if (!outputDirectory) {
-        throw new Error("BABU_STUDIO_FLOW_TEST_OUTPUT_DIR must point to a unique test output directory.");
+      const aiPreviewOnlyId = process.env.BABU_STUDIO_FLOW_TEST_AI_PREVIEW_ID;
+      const aiShotOnlyId = process.env.BABU_STUDIO_FLOW_TEST_AI_SHOT_ID;
+      const logAiShotProgress = async (tag: string): Promise<void> => {
+        const status = await recording.getStatus();
+        console.log(`[recording-flow-test] ${tag} shot=${status.aiShotExport?.state}:${status.aiShotExport?.progress} clip=${status.aiShortClip?.state}:${status.aiShortClip?.progress}`);
+      };
+      if (aiShotOnlyId) {
+        // Step 1: forced-360p AI export, then step 2: short clip cut from it,
+        // polling status so progress is visible across frames like the UI does.
+        const shotPoll = setInterval(() => {
+          void logAiShotProgress("exporting").catch((error: unknown) => console.error("[recording-flow-test] status poll failed", error));
+        }, 500);
+        let shot;
+        try {
+          shot = await recording.exportAiShotClip({ id: aiShotOnlyId });
+        } finally {
+          clearInterval(shotPoll);
+        }
+        console.log(`[recording-flow-test] SHOT-EXPORT RESULT ${JSON.stringify(shot)}`);
+        if (!shot.success) {
+          throw new Error(shot.error || "AI 360p flow-test export failed.");
+        }
+        const clipPoll = setInterval(() => {
+          void logAiShotProgress("generating").catch((error: unknown) => console.error("[recording-flow-test] status poll failed", error));
+        }, 500);
+        let clip;
+        try {
+          clip = await recording.generateAiShortClip({ id: aiShotOnlyId });
+        } finally {
+          clearInterval(clipPoll);
+        }
+        console.log(`[recording-flow-test] SHORT-CLIP RESULT ${JSON.stringify(clip)}`);
+        if (!clip.success) {
+          throw new Error(clip.error || "AI short-clip flow-test generation failed.");
+        }
+      } else if (aiPreviewOnlyId) {
+        // Render only the small vertical AI preview for an existing take.
+        const preview = await recording.exportAiPreview({ id: aiPreviewOnlyId });
+        console.log(`[recording-flow-test] RESULT ${JSON.stringify(preview)}`);
+      } else {
+        const exportOnlyId = process.env.BABU_STUDIO_FLOW_TEST_EXPORT_ID;
+        if (exportOnlyId) {
+          // Re-export an existing take without recording. The flow test uses this
+          // to prove takes recorded before per-source files still export.
+          const exportResolution = process.env.BABU_STUDIO_FLOW_TEST_EXPORT_RESOLUTION ?? "1080p";
+          if (!(exportResolution in EXPORT_RESOLUTIONS)) {
+            throw new Error(`BABU_STUDIO_FLOW_TEST_EXPORT_RESOLUTION must be one of ${Object.keys(EXPORT_RESOLUTIONS).join(", ")}.`);
+          }
+          const started = await recording.exportRecording({
+            id: exportOnlyId,
+            exportModes,
+            exportResolution: exportResolution as keyof typeof EXPORT_RESOLUTIONS,
+          });
+          if (!started.success) {
+            throw new Error(started.error || "Export-only flow test could not start.");
+          }
+          const deadline = Date.now() + 600_000;
+          let status = await recording.getStatus();
+          while (status.postProcessingState === "PROCESSING") {
+            if (Date.now() > deadline) {
+              throw new Error("Export-only flow test timed out waiting for post-processing.");
+            }
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            status = await recording.getStatus();
+          }
+          console.log(`[recording-flow-test] RESULT ${JSON.stringify(status)}`);
+      } else {
+        const durationMs = Number(process.env.BABU_STUDIO_FLOW_TEST_DURATION_MS ?? 60_000);
+        const outputDirectory = process.env.BABU_STUDIO_FLOW_TEST_OUTPUT_DIR;
+        if (!outputDirectory) {
+          throw new Error("BABU_STUDIO_FLOW_TEST_OUTPUT_DIR must point to a unique test output directory.");
+        }
+        const result = await recording.runSyntheticFlowTest(
+          durationMs,
+          outputDirectory,
+          exportModes,
+          (elapsedMs) => console.log(`[recording-flow-test] Recording ${Math.floor(elapsedMs / 1000)}s/${Math.ceil(durationMs / 1000)}s`),
+        );
+        console.log(`[recording-flow-test] RESULT ${JSON.stringify(result)}`);
+        }
       }
-      const result = await recording.runSyntheticFlowTest(
-        durationMs,
-        outputDirectory,
-        exportModes,
-        (elapsedMs) => console.log(`[recording-flow-test] Recording ${Math.floor(elapsedMs / 1000)}s/${Math.ceil(durationMs / 1000)}s`),
-      );
-      console.log(`[recording-flow-test] RESULT ${JSON.stringify(result)}`);
     } catch (error) {
       console.error("[recording-flow-test] FAILED", error);
       try {

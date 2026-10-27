@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { ExportDialogs } from "@/features/export/components/ExportDialogs";
+import { useAiHighlights } from "@/features/export/hooks/useAiHighlights";
 import { useExportFlow } from "@/features/export/hooks/useExportFlow";
 import { useAudioMixer } from "@/features/audio/hooks/useAudioMixer";
 import { useBrowserCaptureStreams } from "@/features/layers/hooks/useBrowserCaptureStreams";
@@ -69,6 +70,15 @@ export default function App() {
   });
   useRecordingPolling(recording, toasts.setInfoToast, stopRecording);
   const exportFlow = useExportFlow(recording, config);
+  const aiHighlights = useAiHighlights(exportFlow.selectedRecordingId, recording.recordingBusy);
+  const aiDialogOpen = exportFlow.aiDialogOpen;
+  const selectedRecordingId = exportFlow.selectedRecordingId;
+  useEffect(() => {
+    if (aiDialogOpen && selectedRecordingId) {
+      void exportFlow.refreshAiShotPath();
+      void aiHighlights.refreshPersistedHighlights();
+    }
+  }, [aiDialogOpen, selectedRecordingId]);
 
   function reloadAll(): void {
     audio.reloadAudioMixer();
@@ -84,6 +94,8 @@ export default function App() {
           recordingElapsedMs={recording.recordingElapsedMs}
           postProcessingState={recording.postProcessingState}
           onOpenExport={() => void exportFlow.openExportPicker()}
+          onOpenAi={() => void exportFlow.openAiDialog()}
+          exportLocked={aiHighlights.exportingIndex !== null || aiHighlights.exportingAll}
           onStart={() => void startRecording()}
           onStop={() => void stopRecording()}
         />
@@ -179,6 +191,45 @@ export default function App() {
           setResolution: config.setExportResolution,
           freeBytes: exportFlow.exportFreeBytes,
           onExport: exportFlow.startSelectedExport,
+        }}
+        ai={{
+          open: exportFlow.aiDialogOpen,
+          setOpen: exportFlow.setAiDialogOpen,
+          busy: recording.recordingBusy,
+          loading: exportFlow.exportPickerLoading,
+          recordings: exportFlow.savedRecordings,
+          selectedRecordingId: exportFlow.selectedRecordingId,
+          setSelectedRecordingId: exportFlow.setSelectedRecordingId,
+          aiShotExportBusy: exportFlow.aiShotExportBusy,
+          aiShotExportProgress: exportFlow.aiShotExportProgress,
+          aiShotExportPath: exportFlow.aiShotExportPath,
+          aiShotExportError: exportFlow.aiShotExportError,
+          onAiShotExport: exportFlow.startAiShotExport,
+          onCancelAiShotExport: exportFlow.cancelAiShotExport,
+          aiSourceFiles: exportFlow.aiSourceFiles,
+          selectedAiSourceFile: exportFlow.selectedAiSourceFile,
+          onSelectAiSourceFile: exportFlow.setSelectedAiSourceFile,
+          highlightsBusy: aiHighlights.highlightsBusy,
+          highlightsStage: aiHighlights.highlightsStage,
+          highlightsClips: aiHighlights.highlightsClips,
+          highlightsError: aiHighlights.highlightsError,
+          highlightsModel: aiHighlights.highlightsModel,
+          highlightsAnalyzedAt: aiHighlights.highlightsAnalyzedAt,
+          highlightsTimeError: aiHighlights.highlightsTimeError,
+          exportingIndex: aiHighlights.exportingIndex,
+          exportingAll: aiHighlights.exportingAll,
+          keyConfigured: aiHighlights.keyStatus?.configured ?? false,
+          keySource: aiHighlights.keyStatus?.source ?? null,
+          keyBusy: aiHighlights.keyBusy,
+          keyError: aiHighlights.keyError,
+          onRefreshKeyStatus: aiHighlights.refreshKeyStatus,
+          onSaveAiKey: aiHighlights.saveAiKey,
+          onClearAiKey: aiHighlights.clearAiKey,
+          onFindHighlights: (sourceFile) => aiHighlights.findHighlights(sourceFile),
+          onCancelFindHighlights: aiHighlights.cancelFindHighlights,
+          onUpdateHighlightTime: aiHighlights.updateClipTime,
+          onExportHighlightClip: aiHighlights.exportHighlightClip,
+          onExportAllHighlights: aiHighlights.exportAllHighlights,
         }}
         progress={{
           open: recording.exportDialogOpen,

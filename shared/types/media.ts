@@ -70,11 +70,125 @@ export type StartRecordingRequest = {
   scene: RecordingScene;
 };
 
+export type RecordingSourceFile = {
+  name: string;
+  kind: "video" | "audio";
+  path: string;
+};
+
+export type AiPreviewState = "IDLE" | "PROCESSING" | "COMPLETED" | "ERROR";
+
+export type AiPreviewStatus = {
+  state: AiPreviewState;
+  progress: number;
+  path: string | null;
+  error?: string;
+};
+
+export type AiPreviewResult = {
+  success: boolean;
+  path: string | null;
+  error: string | null;
+};
+
+export type AiArtifactsRequest = {
+  id: string;
+};
+
+export type AiArtifactHighlight = AiHighlightSuggestion & {
+  exportPath: string | null;
+};
+
+export type AiArtifactsResult = {
+  shotPath: string | null;
+  shortClipPath: string | null;
+  /** Basenames of playable .mp4 files in the take's exports dir (ai-360p.mp4 first). */
+  shotFiles: string[];
+  highlights: {
+    model: string | null;
+    analyzedAt: string | null;
+    clips: AiArtifactHighlight[];
+  } | null;
+};
+
+export type AiKeySource = "secure-storage" | "environment" | "none";
+
+export type AiKeyStatus = {
+  configured: boolean;
+  source: AiKeySource;
+};
+
+export type ExportAiPreviewRequest = {
+  id: string;
+};
+
+export type AiHighlightState = "IDLE" | "ANALYZING" | "COMPLETED" | "ERROR";
+
+export type AiHighlightSuggestion = {
+  startTime: number;
+  endTime: number;
+  category: string;
+  title: string;
+  reason: string;
+  confidence: number;
+  source: "ai";
+};
+
+export type AiHighlightsStatus = {
+  state: AiHighlightState;
+  /** Honest stage label while the model call is opaque (e.g. "Uploading clip…"). Null when idle. */
+  stage: string | null;
+  /** Null while the model call is opaque (indeterminate); 100 only on success. */
+  progress: number | null;
+  clips: AiHighlightSuggestion[];
+  model: string | null;
+  analyzedAt: string | null;
+  error?: string;
+};
+
+export type FindHighlightsRequest = {
+  id: string;
+  /** Basename of a generated .mp4 in the take's exports dir; defaults to ai-360p.mp4. */
+  sourceFile?: string;
+};
+
+export type FindHighlightsResult = {
+  success: boolean;
+  clips: AiHighlightSuggestion[];
+  model: string | null;
+  analyzedAt: string | null;
+  error: string | null;
+};
+
+export type ExportHighlightClipRequest = {
+  id: string;
+  /** Index into the persisted suggestion list. */
+  index: number;
+  /** Edited bounds; validated and clamped in the main process. */
+  startTime?: number;
+  endTime?: number;
+};
+
+export type ExportAllHighlightsRequest = {
+  id: string;
+  /** Optional edited clips; validated and clamped in the main process. */
+  clips?: AiHighlightSuggestion[];
+};
+
+export type HighlightClipExportResult = {
+  success: boolean;
+  paths: string[];
+  error: string | null;
+};
+
 export type RecordingResult = {
   state: RecordingState;
   success: boolean;
   recordingMode: RecordingMode;
+  /** Legacy single-file path. New recordings write one file per source (see sourceFiles); this carries the first source file. */
   filePath: string;
+  /** One entry per recorded source. Absent on takes recorded before per-source files. */
+  sourceFiles?: RecordingSourceFile[];
   durationMs: number;
   fileSizeBytes: number;
   droppedVideoFrames: number;
@@ -87,6 +201,10 @@ export type RecordingResult = {
   exportPath?: string | null;
   exportPaths?: Partial<Record<RecordingMode, string>>;
   exports?: RecordingExport[];
+  aiPreview?: AiPreviewStatus;
+  aiShotExport?: AiPreviewStatus;
+  aiShortClip?: AiPreviewStatus;
+  aiHighlights?: AiHighlightsStatus;
 };
 
 export type RecordingSummary = {

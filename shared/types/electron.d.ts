@@ -1,4 +1,4 @@
-import type { ExportRecordingRequest, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "./media";
+import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "./media";
 import type { ProcessSnapshot, SystemStats } from "./system-stats";
 import type { StudioConfiguration } from "./studio-config";
 
@@ -15,6 +15,20 @@ declare global {
       exportRecording(request: ExportRecordingRequest): Promise<RecordingResult>;
       cancelRecordingExport(): Promise<void>;
       retryRecordingExport(): Promise<RecordingResult>;
+      exportAiPreview(request: ExportAiPreviewRequest): Promise<AiPreviewResult>;
+      getAiArtifacts(request: AiArtifactsRequest): Promise<AiArtifactsResult>;
+      cancelAiPreview(): Promise<void>;
+      exportAiShotClip(request: ExportAiPreviewRequest): Promise<AiPreviewResult>;
+      cancelAiShotClipExport(): Promise<void>;
+      generateAiShortClip(request: ExportAiPreviewRequest): Promise<AiPreviewResult>;
+      cancelAiShortClip(): Promise<void>;
+      findHighlights(request: FindHighlightsRequest): Promise<FindHighlightsResult>;
+      cancelFindHighlights(): Promise<void>;
+      exportHighlightClip(request: ExportHighlightClipRequest): Promise<HighlightClipExportResult>;
+      exportAllHighlights(request: ExportAllHighlightsRequest): Promise<HighlightClipExportResult>;
+      getAiKeyStatus(): Promise<AiKeyStatus>;
+      setAiKey(key: string): Promise<void>;
+      clearAiKey(): Promise<void>;
       requestCameraAccess(): Promise<boolean>;
       requestMicrophoneAccess(): Promise<boolean>;
       getSystemStats(): Promise<SystemStats>;

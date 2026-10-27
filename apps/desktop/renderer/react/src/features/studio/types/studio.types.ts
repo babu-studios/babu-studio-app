@@ -33,7 +33,8 @@ export type IconName =
   | "trash"
   | "export"
   | "plus"
-  | "close";
+  | "close"
+  | "sparkle";
 
 export type AudioTrack = {
   id: string;

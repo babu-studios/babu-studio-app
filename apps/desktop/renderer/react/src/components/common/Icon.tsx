@@ -95,6 +95,12 @@ export function Icon({ name, className = "" }: { name: IconName; className?: str
     ),
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="M6 6l12 12M18 6L6 18" />,
+    sparkle: (
+      <>
+        <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4L12 3Z" />
+        <path d="M18.5 15.5l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9.9-2.6Z" />
+      </>
+    ),
   };
 
   return (
