@@ -47,6 +47,38 @@ a { color: var(--green); }
 }
 .brand { display: flex; align-items: center; gap: 0.6rem; color: var(--ink); text-decoration: none; font-weight: 700; }
 .brand-mark { width: 14px; height: 14px; background: var(--green); border-radius: 2px; animation: mark-pulse 2.4s ease-in-out infinite; }
+
+/* Meta AI shimmer: animated blue-to-violet gradient, used only where the
+   page talks about Meta's models. */
+.meta-text {
+  background: linear-gradient(90deg, #0095ff, #5b8cff, #a259ff, #d068ff, #0095ff);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: meta-slide 5s linear infinite;
+}
+.brand .brand-mark {
+  background: linear-gradient(135deg, #0095ff, #a259ff);
+  border-radius: 50%;
+}
+.model-cards article { border-top: 3px solid transparent; position: relative; }
+.model-cards article::before {
+  content: ""; position: absolute; top: -3px; left: -1px; right: -1px; height: 3px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(90deg, #0095ff, #5b8cff, #a259ff, #d068ff, #0095ff);
+  background-size: 220% 100%;
+  animation: meta-slide 6s linear infinite;
+}
+.model-job {
+  background: linear-gradient(90deg, #0095ff, #a259ff);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: meta-slide 6s linear infinite;
+}
+@keyframes meta-slide { to { background-position: 220% 0; } }
 .topnav { display: flex; gap: 1.2rem; margin-left: auto; }
 .topnav a { color: var(--ink-dim); text-decoration: none; font-size: 0.9rem; }
 .topnav a:hover { color: var(--ink); }
