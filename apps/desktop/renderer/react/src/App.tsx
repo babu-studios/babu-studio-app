@@ -4,7 +4,6 @@ import { ExportDialogs } from "@/features/export/components/ExportDialogs";
 import { useAiHighlights } from "@/features/export/hooks/useAiHighlights";
 import { useMicWav } from "@/features/export/hooks/useMicWav";
 import { useSubtitles } from "@/features/export/hooks/useSubtitles";
-import { useDub } from "@/features/export/hooks/useDub";
 import { useExportFlow } from "@/features/export/hooks/useExportFlow";
 import { useAudioMixer } from "@/features/audio/hooks/useAudioMixer";
 import { useBrowserCaptureStreams } from "@/features/layers/hooks/useBrowserCaptureStreams";
@@ -80,7 +79,6 @@ export default function App() {
   const aiHighlights = useAiHighlights(exportFlow.selectedRecordingId, recording.recordingBusy);
   const micWav = useMicWav(exportFlow.selectedRecordingId, recording.recordingBusy);
   const subtitles = useSubtitles(exportFlow.selectedRecordingId, recording.recordingBusy);
-  const dub = useDub(exportFlow.selectedRecordingId, recording.recordingBusy);
   const aiDialogOpen = exportFlow.aiDialogOpen;
   const selectedRecordingId = exportFlow.selectedRecordingId;
   useEffect(() => {
@@ -257,13 +255,6 @@ export default function App() {
           subtitlesError: subtitles.subtitlesError,
           onStartSubtitles: subtitles.startSubtitles,
           onCancelSubtitles: subtitles.cancelSubtitles,
-          dubBusy: dub.dubBusy,
-          dubStage: dub.dubStage,
-          dubProgress: dub.dubProgress,
-          dubResults: dub.dubResults,
-          dubError: dub.dubError,
-          onStartDub: dub.startDub,
-          onCancelDub: dub.cancelDub,
         }}
         progress={{
           open: recording.exportDialogOpen,

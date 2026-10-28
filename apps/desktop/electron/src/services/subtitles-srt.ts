@@ -67,36 +67,6 @@ export function normalizeTranscribeTurns(rawTurns: unknown): SubtitleTurn[] {
   return parseSubtitleTurns(mapped);
 }
 
-/** Parses .srt content back into turns. Throws on malformed blocks. */
-export function parseSrt(content: string): SubtitleTurn[] {
-  const blocks = content
-    .replace(/\r\n/g, "\n")
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter((block) => block.length > 0);
-  return blocks.map((block, index) => {
-    const lines = block.split("\n");
-    if (lines.length < 3) {
-      throw new Error(`Subtitle block ${index + 1} is incomplete.`);
-    }
-    const id = Number.parseInt(lines[0], 10);
-    const timing = /(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/.exec(lines[1] ?? "");
-    if (!Number.isInteger(id) || !timing) {
-      throw new Error(`Subtitle block ${index + 1} has a bad number or timing.`);
-    }
-    const toMs = (hours: string, minutes: string, seconds: string, millis: string): number =>
-      (Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)) * 1000 + Number(millis);
-    const turn: SubtitleTurn = {
-      id,
-      startMs: toMs(timing[1], timing[2], timing[3], timing[4]),
-      endMs: toMs(timing[5], timing[6], timing[7], timing[8]),
-      text: lines.slice(2).join("\n"),
-    };
-    assertTurn(turn, index);
-    return turn;
-  });
-}
-
 /** Strictly parses an unknown value into subtitle turns. Never invents data. */
 export function parseSubtitleTurns(raw: unknown): SubtitleTurn[] {
   if (!Array.isArray(raw)) {

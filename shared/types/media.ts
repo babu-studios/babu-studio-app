@@ -242,41 +242,6 @@ export type StartSubtitlesResult = {
   error: string | null;
 };
 
-export type AiDubResult = {
-  code: string;
-  name: string;
-  srtPath: string | null;
-  wavPath: string | null;
-  voice?: string;
-  error?: string;
-};
-
-export type AiDubStatus = {
-  state: AiSubtitlesState;
-  /** Honest stage label while the job runs (e.g. "Voicing Spanish… (2/5)"). Null when idle. */
-  stage: string | null;
-  /** Real per-cue percent while voices synthesize; null while assembling. */
-  progress: number | null;
-  languages: AiDubResult[];
-  error?: string;
-};
-
-export type StartDubRequest = {
-  id: string;
-  languages: AiSubtitleLanguage[];
-};
-
-export type StartDubResult = {
-  success: boolean;
-  languages: AiDubResult[];
-  error: string | null;
-};
-
-export type DubPreviewRequest = {
-  id: string;
-  code: string;
-};
-
 export type RecordingResult = {
   state: RecordingState;
   success: boolean;
@@ -302,7 +267,6 @@ export type RecordingResult = {
   aiShortClip?: AiPreviewStatus;
   aiHighlights?: AiHighlightsStatus;
   aiSubtitles?: AiSubtitlesStatus;
-  aiDub?: AiDubStatus;
 };
 
 export type RecordingSummary = {

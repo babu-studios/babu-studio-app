@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { formatSrt, formatSrtTimestamp, isCompliantWavHeader, mapTranslatedTurns, normalizeTranscribeTurns, parseSrt, parseSubtitleTurns } from "./subtitles-srt.js";
-import { voiceForLanguage } from "./dub-voices.js";
-import { buildDubTimeline } from "./ai-dub.provider.js";
+import { formatSrt, formatSrtTimestamp, isCompliantWavHeader, mapTranslatedTurns, normalizeTranscribeTurns, parseSubtitleTurns } from "./subtitles-srt.js";
 
 describe("formatSrtTimestamp", () => {
   it("formats zero and small values", () => {
@@ -105,55 +103,6 @@ describe("mapTranslatedTurns", () => {
       ]),
       /does not match/,
     );
-  });
-});
-
-describe("parseSrt", () => {
-  it("round-trips formatted output", () => {
-    const turns = [
-      { id: 1, startMs: 1520, endMs: 4640, text: "How is the weather?" },
-      { id: 2, startMs: 5900, endMs: 8240, text: "It is raining." },
-    ];
-    assert.deepEqual(parseSrt(formatSrt(turns)), turns);
-  });
-
-  it("rejects malformed blocks", () => {
-    assert.throws(() => parseSrt("1\nnot a timing\nHello"), /bad number or timing/);
-    assert.throws(() => parseSrt("1\n00:00:01,000 --> 00:00:02,000"), /incomplete/);
-  });
-});
-
-describe("voiceForLanguage", () => {
-  it("maps known languages to offline voices", () => {
-    assert.equal(voiceForLanguage("bn")?.voice, "Piya");
-    assert.equal(voiceForLanguage("zh")?.voice, "Tingting");
-    assert.equal(voiceForLanguage("en")?.voice, "Samantha");
-  });
-
-  it("returns null without substituting another language", () => {
-    assert.equal(voiceForLanguage("fil"), null);
-    assert.equal(voiceForLanguage("xx"), null);
-  });
-});
-
-describe("buildDubTimeline", () => {
-  const turns = [
-    { id: 1, startMs: 1000, endMs: 3000, text: "Hello" },
-    { id: 2, startMs: 5000, endMs: 7000, text: "World" },
-  ];
-
-  it("places cues at their subtitle start times", () => {
-    const filter = buildDubTimeline(turns, [1.5, 1.5], 7000);
-    assert.match(filter, /adelay=1000\|1000/);
-    assert.match(filter, /adelay=5000\|5000/);
-    assert.match(filter, /amix=inputs=2/);
-    assert.match(filter, /\[dub\]$/);
-  });
-
-  it("speeds up overlong cues instead of overlapping the next cue", () => {
-    const filter = buildDubTimeline(turns, [4, 1.5], 7000);
-    assert.match(filter, /atempo=2\.000/);
-    assert.match(filter, /atrim=0:2\.000/);
   });
 });
 

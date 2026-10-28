@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import type { AiArtifactsRequest, ConvertMicWavRequest, DubPreviewRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, ListSubtitlesRequest, StartDubRequest, StartRecordingRequest, StartSubtitlesRequest } from "@shared/types/media";
+import type { AiArtifactsRequest, ConvertMicWavRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, ListSubtitlesRequest, StartRecordingRequest, StartSubtitlesRequest } from "@shared/types/media";
 import type { MediaCoreService } from "../services/media-core.service";
 import type { RecordingService } from "../services/recording.service";
 
@@ -29,8 +29,4 @@ export function registerMediaCoreIpc(mediaCore: MediaCoreService, recording: Rec
   ipcMain.handle("recording:subtitles-start", (_event, request: StartSubtitlesRequest) => recording.startSubtitles(request));
   ipcMain.handle("recording:subtitles-cancel", () => recording.cancelSubtitles());
   ipcMain.handle("recording:subtitles-list", (_event, request: ListSubtitlesRequest) => recording.listSubtitles(request));
-  ipcMain.handle("recording:dub-start", (_event, request: StartDubRequest) => recording.startDub(request));
-  ipcMain.handle("recording:dub-cancel", () => recording.cancelDub());
-  ipcMain.handle("recording:dub-list", (_event, request: ListSubtitlesRequest) => recording.listDubs(request));
-  ipcMain.handle("recording:dub-preview", (_event, request: DubPreviewRequest) => recording.readDubPreview(request));
 }

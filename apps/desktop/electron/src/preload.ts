@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { ProcessSnapshot, SystemStats } from "@shared/types/system-stats";
-import type { AiArtifactsRequest, AiArtifactsResult, AiDubResult, AiKeyStatus, AiPreviewResult, AiSubtitleLanguage, AiSubtitleResult, ConvertMicWavRequest, DubPreviewRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, ListSubtitlesRequest, MediaCoreStatus, MicWavPreviewResult, MicWavResult, MicWavStatusResult, RecordingResult, RecordingSummary, StartDubRequest, StartDubResult, StartRecordingRequest, StartSubtitlesRequest, StartSubtitlesResult } from "@shared/types/media";
+import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, AiSubtitleLanguage, AiSubtitleResult, ConvertMicWavRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, ListSubtitlesRequest, MediaCoreStatus, MicWavPreviewResult, MicWavResult, MicWavStatusResult, RecordingResult, RecordingSummary, StartRecordingRequest, StartSubtitlesRequest, StartSubtitlesResult } from "@shared/types/media";
 import type { StudioConfiguration } from "@shared/types/studio-config";
 
 contextBridge.exposeInMainWorld("babuStudio", {
@@ -31,10 +31,6 @@ contextBridge.exposeInMainWorld("babuStudio", {
   startSubtitles: (request: StartSubtitlesRequest): Promise<StartSubtitlesResult> => ipcRenderer.invoke("recording:subtitles-start", request),
   cancelSubtitles: (): Promise<void> => ipcRenderer.invoke("recording:subtitles-cancel"),
   listSubtitles: (request: ListSubtitlesRequest): Promise<AiSubtitleResult[]> => ipcRenderer.invoke("recording:subtitles-list", request),
-  startDub: (request: StartDubRequest): Promise<StartDubResult> => ipcRenderer.invoke("recording:dub-start", request),
-  cancelDub: (): Promise<void> => ipcRenderer.invoke("recording:dub-cancel"),
-  listDubs: (request: ListSubtitlesRequest): Promise<AiDubResult[]> => ipcRenderer.invoke("recording:dub-list", request),
-  dubPreview: (request: DubPreviewRequest): Promise<MicWavPreviewResult> => ipcRenderer.invoke("recording:dub-preview", request),
   getAiKeyStatus: (): Promise<AiKeyStatus> => ipcRenderer.invoke("ai-key:status"),
   setAiKey: (key: string): Promise<void> => ipcRenderer.invoke("ai-key:set", key),
   clearAiKey: (): Promise<void> => ipcRenderer.invoke("ai-key:clear"),

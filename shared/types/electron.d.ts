@@ -1,4 +1,4 @@
-import type { AiArtifactsRequest, AiArtifactsResult, AiDubResult, AiKeyStatus, AiPreviewResult, AiSubtitleLanguage, AiSubtitleResult, ConvertMicWavRequest, DubPreviewRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, ListSubtitlesRequest, MediaCoreStatus, MicWavPreviewResult, MicWavResult, MicWavStatusResult, RecordingResult, RecordingSummary, StartDubRequest, StartDubResult, StartRecordingRequest, StartSubtitlesRequest, StartSubtitlesResult } from "./media";
+import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, AiSubtitleLanguage, AiSubtitleResult, ConvertMicWavRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, ListSubtitlesRequest, MediaCoreStatus, MicWavPreviewResult, MicWavResult, MicWavStatusResult, RecordingResult, RecordingSummary, StartRecordingRequest, StartSubtitlesRequest, StartSubtitlesResult } from "./media";
 import type { ProcessSnapshot, SystemStats } from "./system-stats";
 import type { StudioConfiguration } from "./studio-config";
 
@@ -32,10 +32,6 @@ declare global {
       startSubtitles(request: StartSubtitlesRequest): Promise<StartSubtitlesResult>;
       cancelSubtitles(): Promise<void>;
       listSubtitles(request: ListSubtitlesRequest): Promise<AiSubtitleResult[]>;
-      startDub(request: StartDubRequest): Promise<StartDubResult>;
-      cancelDub(): Promise<void>;
-      listDubs(request: ListSubtitlesRequest): Promise<AiDubResult[]>;
-      dubPreview(request: DubPreviewRequest): Promise<MicWavPreviewResult>;
       getAiKeyStatus(): Promise<AiKeyStatus>;
       setAiKey(key: string): Promise<void>;
       clearAiKey(): Promise<void>;
