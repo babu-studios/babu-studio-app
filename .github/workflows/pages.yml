@@ -2,7 +2,7 @@ name: Deploy website
 
 on:
   push:
-    branches: [main]
+    branches: [main, BetaMetaAIHackathon]
     paths: ["website/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
