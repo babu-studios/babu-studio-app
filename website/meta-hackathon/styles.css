@@ -121,9 +121,10 @@ a { color: var(--green); }
   padding: 1.1rem 0; border-top: 1px solid var(--line);
 }
 .pipeline li:last-child, .install-steps li:last-child { border-bottom: 1px solid var(--line); }
-/* Install steps mirror the pipeline numbers exactly. */
-.install-steps { list-style: none; margin: 0; padding: 0; padding-inline-start: 0; display: grid; }
-.install-steps > li { margin: 0; }
+/* Install steps share the heading's centered box (margin auto like the
+   pipeline section), with killers for UA list indent, then sit slightly in
+   from the heading edge. */
+.install-steps { list-style: none; margin: 0 auto; padding: 0; padding-inline-start: 0; display: grid; max-width: 1100px; }
 /* Install steps sit in from the heading edge, not flush full-left. */
 #install .install-steps { padding-left: 1.5rem; }
 .p-num {
