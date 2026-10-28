@@ -124,6 +124,8 @@ a { color: var(--green); }
 /* Install steps mirror the pipeline numbers exactly. */
 .install-steps { list-style: none; margin: 0; padding: 0; padding-inline-start: 0; display: grid; }
 .install-steps > li { margin: 0; }
+/* Install steps sit in from the heading edge, not flush full-left. */
+#install .install-steps { padding-left: 1.5rem; }
 .p-num {
   width: 40px; height: 40px;
   border: 1px solid var(--green); color: var(--green);
