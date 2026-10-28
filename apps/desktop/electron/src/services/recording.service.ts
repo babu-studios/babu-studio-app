@@ -1,8 +1,8 @@
 import { app, systemPreferences } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { mkdir, open, readdir, readFile, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import os from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { powerGuard } from "./power-guard.service";
 import type { Readable } from "node:stream";
@@ -230,7 +230,7 @@ const AI_PREVIEW_HEIGHT = 960;
 const AI_PREVIEW_FPS = 30;
 
 // Two-step AI shot clip: a forced-360p vertical file for AI ingestion, then a
-// short clip cut from it. Both live in the take's exports directory.
+// short clip cut from it. Both live in the take's export/ai directory.
 const AI_SHOT_360P_FILE = "ai-360p.mp4";
 const AI_SHOT_WIDTH = 360;
 const AI_SHOT_HEIGHT = 640;
@@ -238,9 +238,52 @@ const AI_SHOT_FPS = 30;
 const AI_SHORT_CLIP_FILE = "ai-short-clip.mp4";
 const AI_SHORT_CLIP_SECONDS = 30;
 
-// AI highlight suggestions: sidecar analysis file in the take's exports
-// directory. master.babu / project.babu formats are never touched for this.
+// AI highlight suggestions: sidecar analysis file in the take's
+// export/ai/highlights directory. master.babu / project.babu formats are
+// never touched for this.
 const AI_HIGHLIGHTS_FILE = "ai-highlights.json";
+
+// Take folder layout. Master sources live in master/; everything rendered
+// out of the take lives in export/ (AI files under export/ai/). Takes
+// recorded before this layout keep working through legacy fallbacks.
+const MASTER_DIR = "master";
+const EXPORT_DIR = "export";
+const AI_DIR = "ai";
+const AI_SUBTITLES_DIR = "subtitles";
+const AI_HIGHLIGHTS_DIR = "highlights";
+const LEGACY_EXPORTS_DIR = "exports";
+
+/** Take-relative mp4/srt/json file inside master/ or export/ai/…; never absolute, never escaping. */
+function isTakeRelativeFile(file: string): boolean {
+  if (file.length === 0 || file.includes("\\") || file.includes("..")) {
+    return false;
+  }
+  const parts = file.split("/");
+  if (parts.length === 1) {
+    return parts[0].length > 0;
+  }
+  return parts.length === 2 && parts[0] === MASTER_DIR && parts[1].length > 0;
+}
+
+/** Folder stamp in local time (the old UTC `Z` stamp read hours off). */
+function localRecordingTimestamp(date: Date): string {
+  const pad = (value: number, width = 2): string => String(value).padStart(width, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    + `T${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${pad(date.getMilliseconds(), 3)}`;
+}
+
+/** First candidate that exists on disk, else null. New layout first, legacy second. */
+async function firstExisting(candidates: string[]): Promise<string | null> {
+  for (const candidate of candidates) {
+    try {
+      await stat(candidate);
+      return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
 
 // Deterministic short-clip window: up to AI_SHORT_CLIP_SECONDS taken from the
 // middle of the take so short takes still produce a whole-take clip.
@@ -265,9 +308,7 @@ function isProjectSourceFile(value: unknown): value is ProjectSourceFile {
   return typeof entry.name === "string"
     && (entry.kind === "video" || entry.kind === "audio")
     && typeof entry.file === "string"
-    && entry.file.length > 0
-    && !entry.file.includes("/")
-    && !entry.file.includes("\\");
+    && isTakeRelativeFile(entry.file);
 }
 
 // Recorded source files for a take with absolute paths, or null for takes
@@ -558,10 +599,12 @@ export class RecordingService {
         }
       }
 
-      const recordingId = new Date().toISOString().replace(/[:.]/g, "-");
+      const recordingId = localRecordingTimestamp(new Date());
       const directory = options.outputDirectory
         ?? join(app.getPath("videos"), "Babu Studio", `recording-${recordingId}`);
-      await mkdir(join(directory, "exports"), { recursive: true });
+      await mkdir(join(directory, MASTER_DIR), { recursive: true });
+      await mkdir(join(directory, EXPORT_DIR, AI_DIR, AI_SUBTITLES_DIR), { recursive: true });
+      await mkdir(join(directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR), { recursive: true });
       this.projectDirectory = directory;
       this.projectFile = join(directory, PROJECT_FILE);
       this.postProcessingState = "NOT_STARTED";
@@ -715,11 +758,43 @@ export class RecordingService {
     this.projectMetadata.durationMs = result.durationMs;
     this.projectMetadata.stoppedAt = new Date().toISOString();
     this.projectMetadata.status = result.success ? "SOURCE_FINALIZED" : "ERROR";
+    // Master sources settle in master/. A file that cannot be moved stays
+    // where the recorder wrote it; its entry keeps the working path.
+    const settledSources = [];
+    for (const file of result.sourceFiles ?? []) {
+      const base = basename(file.path);
+      const destination = join(this.projectDirectory, MASTER_DIR, base);
+      try {
+        if (file.path !== destination) {
+          await mkdir(join(this.projectDirectory, MASTER_DIR), { recursive: true });
+          try {
+            await rename(file.path, destination);
+          } catch (renameError) {
+            // Another entry may reference the same file (moved above).
+            await stat(destination);
+            void renameError;
+          }
+        }
+        settledSources.push({ ...file, path: destination });
+      } catch (moveError) {
+        console.error("Unable to move master source file:", moveError);
+        settledSources.push(file);
+      }
+    }
+    if (Array.isArray(result.sourceFiles)) {
+      result.sourceFiles = settledSources.map((file) => ({ ...file }));
+    }
+    if (this.finalizedResult && Array.isArray(this.finalizedResult.sourceFiles)) {
+      this.finalizedResult.sourceFiles = settledSources.map((file) => ({ ...file }));
+    }
+    const directory = this.projectDirectory;
     this.projectMetadata.sources = {
-      files: (result.sourceFiles ?? []).map((file) => ({
+      files: settledSources.map((file) => ({
         name: file.name,
         kind: file.kind,
-        file: basename(file.path),
+        file: file.path.startsWith(`${directory}${sep}`)
+          ? file.path.slice(directory.length + 1).split(sep).join("/")
+          : basename(file.path),
       })),
       videoTracks: result.videoTracks,
       audioTracks: result.audioTracks,
@@ -882,11 +957,11 @@ export class RecordingService {
     this.projectFile = join(directory, PROJECT_FILE);
     this.projectMetadata = project;
     this.finalizedResult = source;
-    const previewPath = join(directory, "exports", AI_PREVIEW_FILE);
+    const previewPath = join(directory, EXPORT_DIR, AI_DIR, AI_PREVIEW_FILE);
     this.aiPreviewCancelled = false;
     this.aiPreviewState = { state: "PROCESSING", progress: 0, path: previewPath };
     try {
-      await mkdir(join(directory, "exports"), { recursive: true });
+      await mkdir(join(directory, EXPORT_DIR, AI_DIR), { recursive: true });
       await this.renderLayout(
         source,
         "VERTICAL",
@@ -965,11 +1040,11 @@ export class RecordingService {
     this.projectFile = join(directory, PROJECT_FILE);
     this.projectMetadata = project;
     this.finalizedResult = source;
-    const shotPath = join(directory, "exports", AI_SHOT_360P_FILE);
+    const shotPath = join(directory, EXPORT_DIR, AI_DIR, AI_SHOT_360P_FILE);
     this.aiShotExportCancelled = false;
     this.aiShotExportState = { state: "PROCESSING", progress: 0, path: shotPath };
     try {
-      await mkdir(join(directory, "exports"), { recursive: true });
+      await mkdir(join(directory, EXPORT_DIR, AI_DIR), { recursive: true });
       await this.renderLayout(
         source,
         "VERTICAL",
@@ -1043,13 +1118,14 @@ export class RecordingService {
     if (!source?.success) {
       throw new Error("The selected recording has no finalized source for the AI short clip.");
     }
-    const shotPath = join(directory, "exports", AI_SHOT_360P_FILE);
-    try {
-      await stat(shotPath);
-    } catch {
+    const shotPath = await firstExisting([
+      join(directory, EXPORT_DIR, AI_DIR, AI_SHOT_360P_FILE),
+      join(directory, LEGACY_EXPORTS_DIR, AI_SHOT_360P_FILE),
+    ]);
+    if (!shotPath) {
       throw new Error("Export the AI 360p file first, then generate the short clip.");
     }
-    const clipPath = join(directory, "exports", AI_SHORT_CLIP_FILE);
+    const clipPath = join(directory, EXPORT_DIR, AI_DIR, AI_SHORT_CLIP_FILE);
     const { startSeconds, lengthSeconds } = aiShortClipWindow(source.durationMs);
     this.aiShortClipCancelled = false;
     this.aiShortClipState = { state: "PROCESSING", progress: 0, path: clipPath };
@@ -1119,13 +1195,21 @@ export class RecordingService {
   }
 
   private async listShotFiles(directory: string): Promise<string[]> {
-    let entries: string[];
-    try {
-      entries = await readdir(join(directory, "exports"));
-    } catch {
-      return [];
+    const seen = new Set<string>();
+    for (const folder of [join(directory, EXPORT_DIR, AI_DIR), join(directory, LEGACY_EXPORTS_DIR)]) {
+      let entries: string[];
+      try {
+        entries = await readdir(folder);
+      } catch {
+        continue;
+      }
+      for (const name of entries) {
+        if (name.toLowerCase().endsWith(".mp4")) {
+          seen.add(name);
+        }
+      }
     }
-    const clips = entries.filter((name) => name.toLowerCase().endsWith(".mp4")).sort();
+    const clips = [...seen].sort();
     clips.sort((a, b) => {
       if (a === AI_SHOT_360P_FILE) {
         return -1;
@@ -1139,7 +1223,7 @@ export class RecordingService {
   }
 
   // Resolve which generated file feeds AI analysis/export. Only basenames
-  // inside the take's own exports dir are accepted — never absolute paths.
+  // inside the take's own export/ai dir are accepted — never absolute paths.
   private async resolveAiSourceFile(directory: string, requested?: unknown): Promise<{ file: string; path: string }> {
     const available = await this.listShotFiles(directory);
     if (available.length === 0) {
@@ -1148,12 +1232,13 @@ export class RecordingService {
     const name = typeof requested === "string" ? requested : "";
     const file = name.length > 0 ? name : AI_SHOT_360P_FILE;
     if (!/^[A-Za-z0-9][A-Za-z0-9 _\-.]*\.mp4$/i.test(file) || !available.includes(file)) {
-      throw new Error("Select a generated clip from this recording's exports folder.");
+      throw new Error("Select a generated clip from this recording's export folder.");
     }
-    const full = join(directory, "exports", file);
-    try {
-      await stat(full);
-    } catch {
+    const full = await firstExisting([
+      join(directory, EXPORT_DIR, AI_DIR, file),
+      join(directory, LEGACY_EXPORTS_DIR, file),
+    ]);
+    if (!full) {
       throw new Error("The selected clip file could not be found. Generate it again.");
     }
     return { file, path: full };
@@ -1167,22 +1252,25 @@ export class RecordingService {
       throw new Error("Select a valid recording.");
     }
     const directory = join(this.recordingsRoot(), request.id);
-    const existingFile = async (file: string): Promise<string | null> => {
-      const full = join(directory, "exports", file);
-      try {
-        await stat(full);
-        return full;
-      } catch {
-        return null;
-      }
-    };
-    const shotPath = await existingFile(AI_SHOT_360P_FILE);
-    const shortClipPath = await existingFile(AI_SHORT_CLIP_FILE);
+    const existingFile = async (file: string, ...subfolders: string[]): Promise<string | null> =>
+      firstExisting([
+        join(directory, EXPORT_DIR, ...subfolders, file),
+        join(directory, LEGACY_EXPORTS_DIR, file),
+      ]);
+    const shotPath = await existingFile(AI_SHOT_360P_FILE, AI_DIR);
+    const shortClipPath = await existingFile(AI_SHORT_CLIP_FILE, AI_DIR);
     const shotFiles = await this.listShotFiles(directory);
     let highlights: AiArtifactsResult["highlights"] = null;
+    const sidecarPath = await firstExisting([
+      join(directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR, AI_HIGHLIGHTS_FILE),
+      join(directory, LEGACY_EXPORTS_DIR, AI_HIGHLIGHTS_FILE),
+    ]);
     try {
+      if (!sidecarPath) {
+        throw new Error("No highlight analysis saved yet.");
+      }
       const sidecar = JSON.parse(
-        await readFile(join(directory, "exports", AI_HIGHLIGHTS_FILE), "utf8"),
+        await readFile(sidecarPath, "utf8"),
       ) as {
         model?: unknown;
         analyzedAt?: unknown;
@@ -1205,7 +1293,9 @@ export class RecordingService {
             // Sidecar stores an absolute path; also accept the bare filename
             // in case the library moved between machines.
             const leaf = saved.split("/").pop() ?? saved;
-            exportPath = (await existingFile(leaf.includes(".mp4") ? leaf : saved)) ?? null;
+            exportPath = (await existingFile(leaf.includes(".mp4") ? leaf : saved, AI_DIR))
+              ?? (await existingFile(leaf.includes(".mp4") ? leaf : saved, AI_DIR, AI_HIGHLIGHTS_DIR))
+              ?? null;
             if (!exportPath) {
               try {
                 await stat(saved);
@@ -1216,7 +1306,7 @@ export class RecordingService {
             }
           }
           if (!exportPath) {
-            exportPath = await existingFile(highlightFileName(index, clip.category));
+            exportPath = await existingFile(highlightFileName(index, clip.category), AI_DIR, AI_HIGHLIGHTS_DIR);
           }
           return { ...clip, exportPath };
         }));
@@ -1369,7 +1459,8 @@ export class RecordingService {
       throw new Error("The microphone file could not be found.");
     }
     // 16 kHz mono PCM: the standard shape for speech/AI audio pipelines.
-    const wavPath = join(directory, "microphone.wav");
+    await mkdir(join(directory, MASTER_DIR), { recursive: true });
+    const wavPath = join(directory, MASTER_DIR, "microphone.wav");
     try {
       await runFfmpeg(
         ["-y", "-i", mic.path, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath],
@@ -1392,17 +1483,16 @@ export class RecordingService {
     if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
       return { path: null };
     }
-    try {
-      const wavPath = join(this.recordingsRoot(), request.id, "microphone.wav");
-      await stat(wavPath);
-      return { path: wavPath };
-    } catch {
-      return { path: null };
-    }
+    const directory = join(this.recordingsRoot(), request.id);
+    const wavPath = await firstExisting([
+      join(directory, MASTER_DIR, "microphone.wav"),
+      join(directory, "microphone.wav"),
+    ]);
+    return { path: wavPath };
   }
 
   // Reads the take's microphone.wav for in-app preview. The path is fixed
-  // to the take directory; the renderer never supplies a file path.
+  // to the take's master directory; the renderer never supplies a file path.
   async readMicrophoneWavPreview(request: ConvertMicWavRequest): Promise<MicWavPreviewResult> {
     if (this.active || this.startPromise) {
       throw new Error("Stop the current recording before previewing microphone audio.");
@@ -1410,7 +1500,14 @@ export class RecordingService {
     if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
       throw new Error("Select a valid recording to preview microphone audio.");
     }
-    const wavPath = join(this.recordingsRoot(), request.id, "microphone.wav");
+    const directory = join(this.recordingsRoot(), request.id);
+    const wavPath = await firstExisting([
+      join(directory, MASTER_DIR, "microphone.wav"),
+      join(directory, "microphone.wav"),
+    ]);
+    if (!wavPath) {
+      throw new Error("Convert the microphone file before previewing it.");
+    }
     let info;
     try {
       info = await stat(wavPath);
@@ -1506,7 +1603,8 @@ export class RecordingService {
         };
         try {
           const translated = await translateTurns(transcript.turns, language, abort.signal);
-          const srtPath = join(directory, `subtitles-${language.code}.srt`);
+          await mkdir(join(directory, EXPORT_DIR, AI_DIR, AI_SUBTITLES_DIR), { recursive: true });
+          const srtPath = join(directory, EXPORT_DIR, AI_DIR, AI_SUBTITLES_DIR, `subtitles-${language.code}.srt`);
           await writeFile(srtPath, formatSrt(translated), "utf8");
           results.push({ ...language, srtPath });
         } catch (error) {
@@ -1562,40 +1660,49 @@ export class RecordingService {
   }
 
   // Every subtitles-*.srt already saved in the take, regardless of which
-  // run produced it. Names resolve renderer-side from the language list.
+  // run produced it: export/ai/subtitles for new takes, the take root for
+  // takes subtitled before the folder layout. Names resolve renderer-side.
   async listSubtitles(request: ListSubtitlesRequest): Promise<AiSubtitleResult[]> {
     if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
       return [];
     }
     const directory = join(this.recordingsRoot(), request.id);
-    let entries;
-    try {
-      entries = await readdir(directory);
-    } catch {
-      return [];
-    }
-    const results: AiSubtitleResult[] = [];
-    for (const entry of entries) {
-      const match = /^subtitles-([a-z]{2,3}(?:-[a-z]{2})?)\.srt$/i.exec(entry);
-      if (match) {
-        const code = match[1].toLowerCase();
-        results.push({ code, name: code, srtPath: join(directory, entry) });
+    const merged = new Map<string, AiSubtitleResult>();
+    for (const folder of [join(directory, EXPORT_DIR, AI_DIR, AI_SUBTITLES_DIR), directory]) {
+      let entries: string[];
+      try {
+        entries = await readdir(folder);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        const match = /^subtitles-([a-z]{2,3}(?:-[a-z]{2})?)\.srt$/i.exec(entry);
+        if (match) {
+          const code = match[1].toLowerCase();
+          if (!merged.has(code)) {
+            merged.set(code, { code, name: code, srtPath: join(folder, entry) });
+          }
+        }
       }
     }
-    return results.sort((a, b) => a.code.localeCompare(b.code));
+    return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code));
   }
 
   // Compliant microphone.wav uploads directly; anything else is converted to
   // a temporary 24 kHz mono file while the original is preserved.
   private async resolveTranscribableWav(directory: string, id: string): Promise<{ path: string; temp: string | null }> {
-    const wavPath = join(directory, "microphone.wav");
-    if (await isCompliantWav(wavPath)) {
+    const wavPath = await firstExisting([
+      join(directory, MASTER_DIR, "microphone.wav"),
+      join(directory, "microphone.wav"),
+    ]);
+    if (wavPath && await isCompliantWav(wavPath)) {
       return { path: wavPath, temp: null };
     }
-    const m4aPath = join(directory, "microphone.m4a");
-    try {
-      await stat(m4aPath);
-    } catch {
+    const m4aPath = await firstExisting([
+      join(directory, MASTER_DIR, "microphone.m4a"),
+      join(directory, "microphone.m4a"),
+    ]);
+    if (!m4aPath) {
       throw new Error("The selected recording has no microphone audio. Convert it in the Mic WAV step first.");
     }
     const tempPath = join(os.tmpdir(), `babu-mic-${id}-${Date.now()}.wav`);
@@ -1731,7 +1838,9 @@ export class RecordingService {
     onProgress: (progress: number) => void,
   ): Promise<string> {
     const fileName = highlightFileName(index, clip.category);
-    const outputPath = join(loaded.directory, "exports", fileName);
+    const highlightsDir = join(loaded.directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR);
+    await mkdir(highlightsDir, { recursive: true });
+    const outputPath = join(highlightsDir, fileName);
     const startSeconds = Math.max(0, clip.startTime);
     const lengthSeconds = Math.max(0.5, clip.endTime - clip.startTime);
     try {
@@ -1801,8 +1910,8 @@ export class RecordingService {
       clips: clips.map((clip) => ({ ...clip, source: "ai" })),
       exports: clips.map(() => ({ state: "PENDING", path: null as string | null })),
     };
-    await mkdir(join(directory, "exports"), { recursive: true });
-    await writeFile(join(directory, "exports", AI_HIGHLIGHTS_FILE), JSON.stringify(sidecar, null, 2));
+    await mkdir(join(directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR), { recursive: true });
+    await writeFile(join(directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR, AI_HIGHLIGHTS_FILE), JSON.stringify(sidecar, null, 2));
   }
 
   private async loadHighlightClips(id: string): Promise<{ directory: string; clips: AiHighlightSuggestion[]; durationSeconds: number; project: ProjectMetadata; source: RecordingResult; scene: RecordingScene }> {
@@ -1811,8 +1920,15 @@ export class RecordingService {
     }
     const directory = join(this.recordingsRoot(), id);
     let sidecar: { clips?: unknown; durationSeconds?: unknown; sourceFile?: unknown };
+    const sidecarPath = await firstExisting([
+      join(directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR, AI_HIGHLIGHTS_FILE),
+      join(directory, LEGACY_EXPORTS_DIR, AI_HIGHLIGHTS_FILE),
+    ]);
     try {
-      sidecar = JSON.parse(await readFile(join(directory, "exports", AI_HIGHLIGHTS_FILE), "utf8"));
+      if (!sidecarPath) {
+        throw new Error("Find highlights first, then export the suggestions.");
+      }
+      sidecar = JSON.parse(await readFile(sidecarPath, "utf8"));
     } catch {
       throw new Error("Find highlights first, then export the suggestions.");
     }
@@ -1849,7 +1965,13 @@ export class RecordingService {
 
   private async markHighlightExported(directory: string, index: number, path: string): Promise<void> {
     try {
-      const sidecarPath = join(directory, "exports", AI_HIGHLIGHTS_FILE);
+      const sidecarPath = await firstExisting([
+        join(directory, EXPORT_DIR, AI_DIR, AI_HIGHLIGHTS_DIR, AI_HIGHLIGHTS_FILE),
+        join(directory, LEGACY_EXPORTS_DIR, AI_HIGHLIGHTS_FILE),
+      ]);
+      if (!sidecarPath) {
+        return;
+      }
       const sidecar = JSON.parse(await readFile(sidecarPath, "utf8")) as {
         exports?: Array<{ state: string; path: string | null }>;
       };
@@ -1879,7 +2001,7 @@ export class RecordingService {
     projectMetadata.postProcessingFailedAt = null;
     this.exportPaths = {};
     this.exportStates = this.selectedExportModes.map((mode) => {
-      const path = join(projectDirectory, "exports", mode === "HORIZONTAL" ? "horizontal.mp4" : "vertical.mp4");
+      const path = join(projectDirectory, EXPORT_DIR, mode === "HORIZONTAL" ? "horizontal.mp4" : "vertical.mp4");
       this.exportPaths[mode] = path;
       return { mode, path, state: "PENDING", progress: 0 };
     });
@@ -1889,7 +2011,7 @@ export class RecordingService {
     projectMetadata.exportFiles = { ...this.exportPaths };
     projectMetadata.exports = this.exportStates;
     try {
-      await mkdir(join(projectDirectory, "exports"), { recursive: true });
+      await mkdir(join(projectDirectory, EXPORT_DIR), { recursive: true });
       await this.writeProject();
     } catch (error) {
       await this.handlePostProcessingFailure(new Error(`Unable to save project metadata before export: ${error instanceof Error ? error.message : String(error)}`));
