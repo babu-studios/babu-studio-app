@@ -37,6 +37,18 @@ strong { color: var(--ink); }
 code { font-family: var(--mono); font-size: 0.85em; background: var(--bg-inset); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.1em 0.4em; color: var(--ink); }
 a { color: var(--green); }
 
+/* Top notice bar */
+.notice-bar {
+  margin: 0;
+  padding: 0.45rem 1rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--ink-dim);
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--line);
+}
+.notice-bar strong { color: var(--ink); }
+
 /* Top bar */
 .topbar {
   position: sticky; top: 0; z-index: 20;
