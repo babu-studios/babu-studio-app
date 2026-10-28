@@ -10,6 +10,10 @@ export function useBrowserCaptureStreams() {
     });
   }, []);
 
+  function stopBrowserCaptureStream(layerId: LayerId): void {
+    browserCaptureStreamsRef.current[layerId]?.getTracks().forEach((track) => track.stop());
+  }
+
   function setBrowserCaptureStream(layerId: LayerId, stream: MediaStream | null): void {
     const previousStream = browserCaptureStreamsRef.current[layerId];
     if (previousStream && previousStream !== stream) {
@@ -25,5 +29,5 @@ export function useBrowserCaptureStreams() {
     setBrowserCaptureStreams(nextStreams);
   }
 
-  return { browserCaptureStreams, setBrowserCaptureStream };
+  return { browserCaptureStreams, setBrowserCaptureStream, stopBrowserCaptureStream };
 }

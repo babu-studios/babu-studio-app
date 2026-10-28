@@ -34,7 +34,13 @@ export type IconName =
   | "export"
   | "plus"
   | "close"
-  | "sparkle";
+  | "sparkle"
+  | "chevron-down"
+  | "chevron-left"
+  | "chevron-right"
+  | "check"
+  | "play"
+  | "pause";
 
 export type AudioTrack = {
   id: string;

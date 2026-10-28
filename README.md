@@ -31,6 +31,8 @@ Native capture and source recording use AVFoundation and FFmpeg's VideoToolbox e
 
 A live System Resources panel in the top bar shows CPU, GPU, memory, and disk usage once per second. Hovering it opens a popup with per-application CPU and memory usage and advice on which heavy background apps can be closed. GPU utilization is read from macOS (`ioreg`) and shows N/A where unavailable; disk shows percent used with used and remaining space.
 
+The AI popup's Audio step generates multilingual subtitles from the take's microphone track: a compliant `microphone.wav` (mono 16-bit PCM at 16 or 24 kHz) uploads directly, anything else is converted to a temporary 24 kHz file while the original is preserved. The track is transcribed once with `muse-voice-transcribe-1.0` (timestamps come only from the API response, never invented), each selected language is translated with `muse-spark-1.3`, and one `subtitles-<code>.srt` is saved next to the recording. Progress shows real upload bytes, generation cancels cleanly, failures surface as toasts, and the Model API key never leaves the main process.
+
 ## Useful commands
 
 ```sh
@@ -38,6 +40,7 @@ npm run typecheck
 npm run test:core
 npm run build
 npm run package:mac
+npm run test:subtitles --workspace @babu-studios/electron
 ```
 
 See [docs/development/setup.md](docs/development/setup.md) for the app boundaries and build details.

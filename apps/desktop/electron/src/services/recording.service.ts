@@ -1,6 +1,6 @@
 import { app, systemPreferences } from "electron";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import os from "node:os";
 import { basename, dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -14,6 +14,10 @@ import type {
   AiHighlightsStatus,
   AiPreviewResult,
   AiPreviewStatus,
+  AiSubtitleLanguage,
+  AiSubtitleResult,
+  AiSubtitlesStatus,
+  ConvertMicWavRequest,
   ExportAiPreviewRequest,
   ExportAllHighlightsRequest,
   ExportHighlightClipRequest,
@@ -21,6 +25,9 @@ import type {
   FindHighlightsResult,
   ExportRecordingRequest,
   HighlightClipExportResult,
+  MicWavPreviewResult,
+  MicWavResult,
+  MicWavStatusResult,
   PostProcessingState,
   RecordingExport,
   RecordingLayer,
@@ -29,7 +36,10 @@ import type {
   RecordingScene,
   RecordingSourceFile,
   RecordingSummary,
+  ListSubtitlesRequest,
   StartRecordingRequest,
+  StartSubtitlesRequest,
+  StartSubtitlesResult,
 } from "@shared/types/media";
 import {
   HIGHLIGHTS_MODEL_ID,
@@ -38,6 +48,8 @@ import {
   parseHighlightSuggestions,
   type HighlightsProvider,
 } from "./ai-highlights.provider";
+import { transcribeWav, translateTurns, type TranslatedLanguage } from "./ai-subtitles.provider";
+import { formatSrt, isCompliantWavHeader } from "./subtitles-srt.js";
 import {
   DEFAULT_EXPORT_RESOLUTION,
   DEFAULT_NOISE_REDUCTION,
@@ -273,6 +285,41 @@ function resultSourceFiles(result: RecordingResult): RecordingSourceFile[] | nul
   return Array.isArray(result.sourceFiles) && result.sourceFiles.length > 0 ? result.sourceFiles : null;
 }
 
+function sanitizeSubtitleLanguages(languages: unknown): AiSubtitleLanguage[] {
+  if (!Array.isArray(languages) || languages.length === 0 || languages.length > 78) {
+    throw new Error("Select between 1 and 78 languages for subtitles.");
+  }
+  return languages.map((entry) => {
+    if (typeof entry !== "object" || entry === null) {
+      throw new Error("Each subtitle language must name a code and a language.");
+    }
+    const record = entry as Record<string, unknown>;
+    if (typeof record.code !== "string" || !/^[a-z]{2,3}(-[a-z]{2})?$/i.test(record.code)
+      || typeof record.name !== "string" || record.name.trim().length === 0 || record.name.length > 48) {
+      throw new Error("Each subtitle language must name a valid code and language.");
+    }
+    return { code: record.code.toLowerCase(), name: record.name.trim() };
+  });
+}
+
+async function isCompliantWav(wavPath: string): Promise<boolean> {
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(wavPath, "r");
+    const buffer = Buffer.alloc(44);
+    const { bytesRead } = await handle.read(buffer, 0, 44, 0);
+    await handle.close();
+    return bytesRead === 44 && isCompliantWavHeader(buffer);
+  } catch {
+    try {
+      await handle?.close();
+    } catch {
+      // Ignore close failures after a failed read.
+    }
+    return false;
+  }
+}
+
 async function assertSourcesExist(sources: RecordingSourceFile[] | null, directory: string): Promise<void> {
   if (sources) {
     if (sources.length === 0) {
@@ -327,6 +374,14 @@ export class RecordingService {
   private aiHighlightsAbort?: AbortController;
   private aiHighlightsRecordingId?: string;
   private highlightsProvider: HighlightsProvider = metaHighlightsProvider;
+  private aiSubtitlesState: AiSubtitlesStatus = {
+    state: "IDLE",
+    stage: null,
+    progress: null,
+    languages: [],
+  };
+  private aiSubtitlesAbort?: AbortController;
+  private aiSubtitlesRecordingId?: string;
 
   private isScopeCancelled(scope: "export" | "ai-preview" | "ai-shot" | "ai-short-clip"): boolean {
     switch (scope) {
@@ -1231,12 +1286,16 @@ export class RecordingService {
       if (abort.signal.aborted) {
         throw new Error("Highlight analysis cancelled");
       }
-      this.aiHighlightsState = { ...this.aiHighlightsState, stage: "Uploading clip for analysis…" };
-      const raw = await this.highlightsProvider.analyzeVideo(shotPath, durationSeconds, abort.signal);
+      this.aiHighlightsState = { ...this.aiHighlightsState, stage: "Uploading clip for analysis…", progress: 0 };
+      const raw = await this.highlightsProvider.analyzeVideo(shotPath, durationSeconds, abort.signal, (fraction) => {
+        if (this.aiHighlightsAbort === abort && this.aiHighlightsState.state === "ANALYZING") {
+          this.aiHighlightsState = { ...this.aiHighlightsState, progress: Math.round(fraction * 100) };
+        }
+      });
       if (abort.signal.aborted) {
         throw new Error("Highlight analysis cancelled");
       }
-      this.aiHighlightsState = { ...this.aiHighlightsState, stage: "Reading suggestions…" };
+      this.aiHighlightsState = { ...this.aiHighlightsState, stage: "Reading suggestions…", progress: null };
       const clips = parseHighlightSuggestions(raw, durationSeconds, HIGHLIGHTS_MODEL_ID);
       if (clips.length === 0) {
         throw new Error("The model returned no usable highlight moments. Try again.");
@@ -1275,6 +1334,94 @@ export class RecordingService {
     }
   }
 
+  async convertMicrophoneWav(request: ConvertMicWavRequest): Promise<MicWavResult> {
+    if (this.active || this.startPromise) {
+      throw new Error("Stop the current recording before converting microphone audio.");
+    }
+    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
+      throw new Error("Wait for the selected layout exports to finish before converting microphone audio.");
+    }
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      throw new Error("Select a valid recording to convert microphone audio.");
+    }
+    const directory = join(this.recordingsRoot(), request.id);
+    let project: ProjectMetadata;
+    try {
+      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
+    } catch {
+      throw new Error("The selected recording's project file could not be read.");
+    }
+    const sources = projectSources(project, directory);
+    const mic = sources?.find((source) => source.kind === "audio" && basename(source.path) === "microphone.m4a") ?? null;
+    if (!mic) {
+      throw new Error("The selected recording has no microphone track to convert.");
+    }
+    try {
+      await stat(mic.path);
+    } catch {
+      throw new Error("The microphone file could not be found.");
+    }
+    // 16 kHz mono PCM: the standard shape for speech/AI audio pipelines.
+    const wavPath = join(directory, "microphone.wav");
+    try {
+      await runFfmpeg(
+        ["-y", "-i", mic.path, "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wavPath],
+        () => {},
+        () => {},
+        () => {},
+      );
+    } catch (error) {
+      await rm(wavPath, { force: true }).catch((cleanupError: unknown) => {
+        console.error("Unable to remove incomplete microphone.wav:", cleanupError);
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, path: null, error: message };
+    }
+    return { success: true, path: wavPath, error: null };
+  }
+
+  // Reports whether microphone.wav already exists in the take. Read-only.
+  async getMicrophoneWavStatus(request: ConvertMicWavRequest): Promise<MicWavStatusResult> {
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      return { path: null };
+    }
+    try {
+      const wavPath = join(this.recordingsRoot(), request.id, "microphone.wav");
+      await stat(wavPath);
+      return { path: wavPath };
+    } catch {
+      return { path: null };
+    }
+  }
+
+  // Reads the take's microphone.wav for in-app preview. The path is fixed
+  // to the take directory; the renderer never supplies a file path.
+  async readMicrophoneWavPreview(request: ConvertMicWavRequest): Promise<MicWavPreviewResult> {
+    if (this.active || this.startPromise) {
+      throw new Error("Stop the current recording before previewing microphone audio.");
+    }
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      throw new Error("Select a valid recording to preview microphone audio.");
+    }
+    const wavPath = join(this.recordingsRoot(), request.id, "microphone.wav");
+    let info;
+    try {
+      info = await stat(wavPath);
+    } catch {
+      throw new Error("Convert the microphone file before previewing it.");
+    }
+    if (info.size > 200_000_000) {
+      throw new Error("The microphone file is too large to preview.");
+    }
+    try {
+      const data = await readFile(wavPath);
+      return { success: true, data: new Uint8Array(data), error: null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, data: null, error: message };
+    }
+  }
+
   cancelFindHighlights(): void {
     if (this.aiHighlightsState.state === "ANALYZING") {
       this.aiHighlightsAbort?.abort();
@@ -1285,6 +1432,177 @@ export class RecordingService {
     if (this.highlightExportInFlight) {
       throw new Error(`Wait for the highlight export to finish before ${action}.`);
     }
+  }
+
+  // Transcribe the take's microphone audio once, translate the turns into
+  // each requested language, and write one .srt per language. Timings always
+  // come from the transcription response, never invented.
+  async startSubtitles(request: StartSubtitlesRequest): Promise<StartSubtitlesResult> {
+    if (this.active || this.startPromise) {
+      throw new Error("Stop the current recording before generating subtitles.");
+    }
+    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
+      throw new Error("Wait for the selected layout exports to finish before generating subtitles.");
+    }
+    if (this.aiHighlightsState.state === "ANALYZING") {
+      throw new Error("Wait for highlight analysis to finish before generating subtitles.");
+    }
+    if (this.aiSubtitlesState.state === "WORKING") {
+      throw new Error("Subtitle generation is already running.");
+    }
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      throw new Error("Select a valid recording to generate subtitles.");
+    }
+    const languages = sanitizeSubtitleLanguages(request.languages);
+    const directory = join(this.recordingsRoot(), request.id);
+    try {
+      await stat(join(directory, PROJECT_FILE));
+    } catch {
+      throw new Error("The selected recording could not be found.");
+    }
+    const abort = new AbortController();
+    this.aiSubtitlesAbort = abort;
+    this.aiSubtitlesRecordingId = request.id;
+    this.aiSubtitlesState = {
+      state: "WORKING",
+      stage: "Preparing microphone audio…",
+      progress: null,
+      languages: languages.map((language) => ({ ...language, srtPath: null })),
+    };
+    let tempWav: string | null = null;
+    const results: AiSubtitleResult[] = [];
+    try {
+      const resolved = await this.resolveTranscribableWav(directory, request.id);
+      tempWav = resolved.temp;
+      if (abort.signal.aborted) {
+        throw new Error("Subtitles cancelled");
+      }
+      this.aiSubtitlesState = { ...this.aiSubtitlesState, stage: "Uploading audio for transcription…", progress: 0 };
+      const transcript = await transcribeWav(resolved.path, abort.signal, (fraction) => {
+        if (this.aiSubtitlesAbort === abort && this.aiSubtitlesState.state === "WORKING") {
+          this.aiSubtitlesState = { ...this.aiSubtitlesState, progress: Math.round(fraction * 100) };
+        }
+      });
+      if (abort.signal.aborted) {
+        throw new Error("Subtitles cancelled");
+      }
+      for (let index = 0; index < languages.length; index += 1) {
+        const language = languages[index];
+        if (abort.signal.aborted) {
+          throw new Error("Subtitles cancelled");
+        }
+        this.aiSubtitlesState = {
+          ...this.aiSubtitlesState,
+          stage: `Translating ${language.name}… (${index + 1}/${languages.length})`,
+          progress: null,
+          languages: [...results, ...languages.slice(index).map((rest) => ({ ...rest, srtPath: null }))],
+        };
+        try {
+          const translated = await translateTurns(transcript.turns, language, abort.signal);
+          const srtPath = join(directory, `subtitles-${language.code}.srt`);
+          await writeFile(srtPath, formatSrt(translated), "utf8");
+          results.push({ ...language, srtPath });
+        } catch (error) {
+          if (abort.signal.aborted) {
+            throw new Error("Subtitles cancelled");
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          results.push({ ...language, srtPath: null, error: message });
+        }
+      }
+      const failed = results.filter((result) => result.error);
+      if (failed.length === results.length) {
+        const message = failed[0]?.error ?? "Subtitle generation failed.";
+        this.aiSubtitlesState = { state: "ERROR", stage: null, progress: null, languages: results, error: message };
+        return { success: false, languages: results, error: message };
+      }
+      this.aiSubtitlesState = { state: "COMPLETED", stage: null, progress: 100, languages: results };
+      return {
+        success: true,
+        languages: results,
+        error: failed.length > 0 ? `${failed.length} of ${results.length} languages failed; the rest are saved.` : null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = abort.signal.aborted || message === "Subtitles cancelled";
+      this.aiSubtitlesState = {
+        state: cancelled ? "IDLE" : "ERROR",
+        stage: null,
+        progress: null,
+        languages: results,
+        ...(cancelled ? {} : { error: message }),
+      };
+      if (cancelled) {
+        throw new Error("Subtitles cancelled");
+      }
+      return { success: false, languages: results, error: message };
+    } finally {
+      if (tempWav) {
+        await rm(tempWav, { force: true }).catch((cleanupError: unknown) => {
+          console.error("Unable to remove temporary subtitle audio:", cleanupError);
+        });
+      }
+      if (this.aiSubtitlesAbort === abort) {
+        this.aiSubtitlesAbort = undefined;
+      }
+    }
+  }
+
+  cancelSubtitles(): void {
+    if (this.aiSubtitlesState.state === "WORKING") {
+      this.aiSubtitlesAbort?.abort();
+    }
+  }
+
+  // Every subtitles-*.srt already saved in the take, regardless of which
+  // run produced it. Names resolve renderer-side from the language list.
+  async listSubtitles(request: ListSubtitlesRequest): Promise<AiSubtitleResult[]> {
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      return [];
+    }
+    const directory = join(this.recordingsRoot(), request.id);
+    let entries;
+    try {
+      entries = await readdir(directory);
+    } catch {
+      return [];
+    }
+    const results: AiSubtitleResult[] = [];
+    for (const entry of entries) {
+      const match = /^subtitles-([a-z]{2,3}(?:-[a-z]{2})?)\.srt$/i.exec(entry);
+      if (match) {
+        const code = match[1].toLowerCase();
+        results.push({ code, name: code, srtPath: join(directory, entry) });
+      }
+    }
+    return results.sort((a, b) => a.code.localeCompare(b.code));
+  }
+
+  // Compliant microphone.wav uploads directly; anything else is converted to
+  // a temporary 24 kHz mono file while the original is preserved.
+  private async resolveTranscribableWav(directory: string, id: string): Promise<{ path: string; temp: string | null }> {
+    const wavPath = join(directory, "microphone.wav");
+    if (await isCompliantWav(wavPath)) {
+      return { path: wavPath, temp: null };
+    }
+    const m4aPath = join(directory, "microphone.m4a");
+    try {
+      await stat(m4aPath);
+    } catch {
+      throw new Error("The selected recording has no microphone audio. Convert it in the Mic WAV step first.");
+    }
+    const tempPath = join(os.tmpdir(), `babu-mic-${id}-${Date.now()}.wav`);
+    try {
+      await runFfmpeg(
+        ["-y", "-i", m4aPath, "-ac", "1", "-ar", "24000", "-c:a", "pcm_s16le", "-map_metadata", "-1", tempPath],
+        () => {},
+        () => {},
+        () => {},
+      );
+    } catch {
+      throw new Error("The microphone audio could not be converted for transcription.");
+    }
+    return { path: tempPath, temp: tempPath };
   }
 
   // Cut one persisted suggestion from the ORIGINAL recording sources with the
@@ -1567,6 +1885,10 @@ export class RecordingService {
       aiHighlights: {
         ...this.aiHighlightsState,
         clips: this.aiHighlightsState.clips.map((clip) => ({ ...clip })),
+      },
+      aiSubtitles: {
+        ...this.aiSubtitlesState,
+        languages: this.aiSubtitlesState.languages.map((language) => ({ ...language })),
       },
     };
   }

@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:subtitles": "OUT=$(mktemp -d); tsc src/services/subtitles-srt.ts src/services/subtitles-srt.test.ts --outDir \"$OUT\" --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test \"$OUT/subtitles-srt.test.js\"; CODE=$?; rm -rf \"$OUT\"; exit $CODE",
     "package:mac": "electron-builder --mac"
   },
   "devDependencies": {

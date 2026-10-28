@@ -17,6 +17,7 @@ type UseLayersOptions = {
   setVideoInputError: (error: string | null) => void;
   setVideoInputDevices: (devices: DeviceOption[]) => void;
   setBrowserCaptureStream: (layerId: LayerId, stream: MediaStream | null) => void;
+  stopBrowserCaptureStream: (layerId: LayerId) => void;
   setSettingsLayerId: (layerId: LayerId | null) => void;
   setLayerMenuOpen: (open: boolean) => void;
   deselectLayer: (layerId: LayerId) => void;
@@ -32,6 +33,7 @@ export function useLayers({
   setVideoInputError,
   setVideoInputDevices,
   setBrowserCaptureStream,
+  stopBrowserCaptureStream,
   setSettingsLayerId,
   setLayerMenuOpen,
   deselectLayer,
@@ -105,6 +107,7 @@ export function useLayers({
     setVideoInputError,
     setVideoInputDevices,
     setBrowserCaptureStream,
+    stopBrowserCaptureStream,
     updateLayer,
   });
 

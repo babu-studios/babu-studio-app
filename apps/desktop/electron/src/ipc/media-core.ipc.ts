@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import type { AiArtifactsRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, StartRecordingRequest } from "@shared/types/media";
+import type { AiArtifactsRequest, ConvertMicWavRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, ListSubtitlesRequest, StartRecordingRequest, StartSubtitlesRequest } from "@shared/types/media";
 import type { MediaCoreService } from "../services/media-core.service";
 import type { RecordingService } from "../services/recording.service";
 
@@ -21,6 +21,12 @@ export function registerMediaCoreIpc(mediaCore: MediaCoreService, recording: Rec
   ipcMain.handle("recording:cancel-ai-short-clip", () => recording.cancelAiShortClip());
   ipcMain.handle("recording:find-highlights", (_event, request: FindHighlightsRequest) => recording.findHighlights(request));
   ipcMain.handle("recording:cancel-find-highlights", () => recording.cancelFindHighlights());
+  ipcMain.handle("recording:convert-mic-wav", (_event, request: ConvertMicWavRequest) => recording.convertMicrophoneWav(request));
+  ipcMain.handle("recording:mic-wav-preview", (_event, request: ConvertMicWavRequest) => recording.readMicrophoneWavPreview(request));
+  ipcMain.handle("recording:mic-wav-status", (_event, request: ConvertMicWavRequest) => recording.getMicrophoneWavStatus(request));
   ipcMain.handle("recording:export-highlight-clip", (_event, request: ExportHighlightClipRequest) => recording.exportHighlightClip(request));
   ipcMain.handle("recording:export-all-highlights", (_event, request: ExportAllHighlightsRequest) => recording.exportAllHighlightClips(request));
+  ipcMain.handle("recording:subtitles-start", (_event, request: StartSubtitlesRequest) => recording.startSubtitles(request));
+  ipcMain.handle("recording:subtitles-cancel", () => recording.cancelSubtitles());
+  ipcMain.handle("recording:subtitles-list", (_event, request: ListSubtitlesRequest) => recording.listSubtitles(request));
 }

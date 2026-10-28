@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { ProcessSnapshot, SystemStats } from "@shared/types/system-stats";
-import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "@shared/types/media";
+import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, AiSubtitleLanguage, AiSubtitleResult, ConvertMicWavRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, ListSubtitlesRequest, MediaCoreStatus, MicWavPreviewResult, MicWavResult, MicWavStatusResult, RecordingResult, RecordingSummary, StartRecordingRequest, StartSubtitlesRequest, StartSubtitlesResult } from "@shared/types/media";
 import type { StudioConfiguration } from "@shared/types/studio-config";
 
 contextBridge.exposeInMainWorld("babuStudio", {
@@ -23,8 +23,14 @@ contextBridge.exposeInMainWorld("babuStudio", {
   cancelAiShortClip: (): Promise<void> => ipcRenderer.invoke("recording:cancel-ai-short-clip"),
   findHighlights: (request: FindHighlightsRequest): Promise<FindHighlightsResult> => ipcRenderer.invoke("recording:find-highlights", request),
   cancelFindHighlights: (): Promise<void> => ipcRenderer.invoke("recording:cancel-find-highlights"),
+  convertMicWav: (request: ConvertMicWavRequest): Promise<MicWavResult> => ipcRenderer.invoke("recording:convert-mic-wav", request),
+  micWavPreview: (request: ConvertMicWavRequest): Promise<MicWavPreviewResult> => ipcRenderer.invoke("recording:mic-wav-preview", request),
+  micWavStatus: (request: ConvertMicWavRequest): Promise<MicWavStatusResult> => ipcRenderer.invoke("recording:mic-wav-status", request),
   exportHighlightClip: (request: ExportHighlightClipRequest): Promise<HighlightClipExportResult> => ipcRenderer.invoke("recording:export-highlight-clip", request),
   exportAllHighlights: (request: ExportAllHighlightsRequest): Promise<HighlightClipExportResult> => ipcRenderer.invoke("recording:export-all-highlights", request),
+  startSubtitles: (request: StartSubtitlesRequest): Promise<StartSubtitlesResult> => ipcRenderer.invoke("recording:subtitles-start", request),
+  cancelSubtitles: (): Promise<void> => ipcRenderer.invoke("recording:subtitles-cancel"),
+  listSubtitles: (request: ListSubtitlesRequest): Promise<AiSubtitleResult[]> => ipcRenderer.invoke("recording:subtitles-list", request),
   getAiKeyStatus: (): Promise<AiKeyStatus> => ipcRenderer.invoke("ai-key:status"),
   setAiKey: (key: string): Promise<void> => ipcRenderer.invoke("ai-key:set", key),
   clearAiKey: (): Promise<void> => ipcRenderer.invoke("ai-key:clear"),

@@ -95,6 +95,12 @@ export function Icon({ name, className = "" }: { name: IconName; className?: str
     ),
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="M6 6l12 12M18 6L6 18" />,
+    "chevron-down": <path d="M6 9l6 6 6-6" />,
+    "chevron-left": <path d="M15 6l-6 6 6 6" />,
+    "chevron-right": <path d="M9 6l6 6-6 6" />,
+    check: <path d="M4 12l5 5L20 7" />,
+    play: <path d="M8 5v14l11-7z" />,
+    pause: <path d="M6 5h4v14H6zM14 5h4v14h-4z" />,
     sparkle: (
       <>
         <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4L12 3Z" />

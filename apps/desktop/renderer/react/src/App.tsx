@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Topbar } from "@/components/layout/Topbar";
 import { ExportDialogs } from "@/features/export/components/ExportDialogs";
 import { useAiHighlights } from "@/features/export/hooks/useAiHighlights";
+import { useMicWav } from "@/features/export/hooks/useMicWav";
+import { useSubtitles } from "@/features/export/hooks/useSubtitles";
 import { useExportFlow } from "@/features/export/hooks/useExportFlow";
 import { useAudioMixer } from "@/features/audio/hooks/useAudioMixer";
 import { useBrowserCaptureStreams } from "@/features/layers/hooks/useBrowserCaptureStreams";
@@ -25,6 +27,9 @@ export default function App() {
   const recording = useRecordingState();
   const toasts = useToasts(recording.recordingNotice, recording.postProcessingState);
   const config = useStudioConfiguration(toasts.setInfoToast);
+  const notifyAiError = useCallback((text: string) => {
+    toasts.setInfoToast({ text, tone: "error" });
+  }, [toasts.setInfoToast]);
   const { activeScene, setActiveScene, scenes, setScenes, layersByScene, setLayersByScene } = config;
   const currentScene = scenes.find((scene) => scene.id === activeScene) ?? null;
   const currentLayers = currentScene ? layersByScene[currentScene.id] ?? [] : [];
@@ -55,6 +60,7 @@ export default function App() {
     setVideoInputError: videoInputs.setVideoInputError,
     setVideoInputDevices: videoInputs.setVideoInputDevices,
     setBrowserCaptureStream: captureStreams.setBrowserCaptureStream,
+    stopBrowserCaptureStream: captureStreams.stopBrowserCaptureStream,
     setSettingsLayerId: panel.setSettingsLayerId,
     setLayerMenuOpen: panel.setLayerMenuOpen,
     deselectLayer: canvas.deselectLayer,
@@ -71,6 +77,8 @@ export default function App() {
   useRecordingPolling(recording, toasts.setInfoToast, stopRecording);
   const exportFlow = useExportFlow(recording, config);
   const aiHighlights = useAiHighlights(exportFlow.selectedRecordingId, recording.recordingBusy);
+  const micWav = useMicWav(exportFlow.selectedRecordingId, recording.recordingBusy);
+  const subtitles = useSubtitles(exportFlow.selectedRecordingId, recording.recordingBusy);
   const aiDialogOpen = exportFlow.aiDialogOpen;
   const selectedRecordingId = exportFlow.selectedRecordingId;
   useEffect(() => {
@@ -211,6 +219,7 @@ export default function App() {
           onSelectAiSourceFile: exportFlow.setSelectedAiSourceFile,
           highlightsBusy: aiHighlights.highlightsBusy,
           highlightsStage: aiHighlights.highlightsStage,
+          highlightsProgress: aiHighlights.highlightsProgress,
           highlightsClips: aiHighlights.highlightsClips,
           highlightsError: aiHighlights.highlightsError,
           highlightsModel: aiHighlights.highlightsModel,
@@ -226,10 +235,26 @@ export default function App() {
           onSaveAiKey: aiHighlights.saveAiKey,
           onClearAiKey: aiHighlights.clearAiKey,
           onFindHighlights: (sourceFile) => aiHighlights.findHighlights(sourceFile),
+          onErrorToast: notifyAiError,
           onCancelFindHighlights: aiHighlights.cancelFindHighlights,
           onUpdateHighlightTime: aiHighlights.updateClipTime,
           onExportHighlightClip: aiHighlights.exportHighlightClip,
           onExportAllHighlights: aiHighlights.exportAllHighlights,
+          micWavBusy: micWav.micWavBusy,
+          micWavPath: micWav.micWavPath,
+          micWavError: micWav.micWavError,
+          onConvertMicWav: micWav.convertMicWav,
+          micPreviewUrl: micWav.previewUrl,
+          micPreviewLoading: micWav.previewLoading,
+          micPreviewError: micWav.previewError,
+          onLoadMicPreview: micWav.loadPreview,
+          subtitlesBusy: subtitles.subtitlesBusy,
+          subtitlesStage: subtitles.subtitlesStage,
+          subtitlesProgress: subtitles.subtitlesProgress,
+          subtitlesResults: subtitles.subtitlesResults,
+          subtitlesError: subtitles.subtitlesError,
+          onStartSubtitles: subtitles.startSubtitles,
+          onCancelSubtitles: subtitles.cancelSubtitles,
         }}
         progress={{
           open: recording.exportDialogOpen,

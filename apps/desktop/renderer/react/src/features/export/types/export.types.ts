@@ -41,11 +41,13 @@ export type AiDialogProps = {
   onSelectAiSourceFile: (file: string) => void;
   highlightsBusy: boolean;
   highlightsStage: string | null;
+  highlightsProgress: number | null;
   highlightsClips: Array<import("@shared/types/media").AiHighlightSuggestion & { exportPath: string | null }>;
   highlightsError: string | null;
   highlightsModel: string | null;
   highlightsAnalyzedAt: string | null;
   highlightsTimeError: string | null;
+  onErrorToast: (text: string) => void;
   exportingIndex: number | null;
   exportingAll: boolean;
   keyConfigured: boolean;
@@ -60,6 +62,21 @@ export type AiDialogProps = {
   onUpdateHighlightTime: (index: number, field: "startTime" | "endTime", raw: string) => void;
   onExportHighlightClip: (index: number) => Promise<void>;
   onExportAllHighlights: () => Promise<void>;
+  micWavBusy: boolean;
+  micWavPath: string | null;
+  micWavError: string | null;
+  onConvertMicWav: () => Promise<void>;
+  micPreviewUrl: string | null;
+  micPreviewLoading: boolean;
+  micPreviewError: string | null;
+  onLoadMicPreview: () => Promise<void>;
+  subtitlesBusy: boolean;
+  subtitlesStage: string | null;
+  subtitlesProgress: number | null;
+  subtitlesResults: Array<import("@shared/types/media").AiSubtitleResult>;
+  subtitlesError: string | null;
+  onStartSubtitles: (languages: Array<import("@shared/types/media").AiSubtitleLanguage>) => Promise<void>;
+  onCancelSubtitles: () => void;
 };
 
 export type ExportProgressProps = {

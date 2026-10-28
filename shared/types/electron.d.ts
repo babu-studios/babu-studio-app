@@ -1,4 +1,4 @@
-import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, MediaCoreStatus, RecordingResult, RecordingSummary, StartRecordingRequest } from "./media";
+import type { AiArtifactsRequest, AiArtifactsResult, AiKeyStatus, AiPreviewResult, AiSubtitleLanguage, AiSubtitleResult, ConvertMicWavRequest, ExportAiPreviewRequest, ExportAllHighlightsRequest, ExportHighlightClipRequest, ExportRecordingRequest, FindHighlightsRequest, FindHighlightsResult, HighlightClipExportResult, ListSubtitlesRequest, MediaCoreStatus, MicWavPreviewResult, MicWavResult, MicWavStatusResult, RecordingResult, RecordingSummary, StartRecordingRequest, StartSubtitlesRequest, StartSubtitlesResult } from "./media";
 import type { ProcessSnapshot, SystemStats } from "./system-stats";
 import type { StudioConfiguration } from "./studio-config";
 
@@ -26,6 +26,12 @@ declare global {
       cancelFindHighlights(): Promise<void>;
       exportHighlightClip(request: ExportHighlightClipRequest): Promise<HighlightClipExportResult>;
       exportAllHighlights(request: ExportAllHighlightsRequest): Promise<HighlightClipExportResult>;
+      convertMicWav(request: ConvertMicWavRequest): Promise<MicWavResult>;
+      micWavPreview(request: ConvertMicWavRequest): Promise<MicWavPreviewResult>;
+      micWavStatus(request: ConvertMicWavRequest): Promise<MicWavStatusResult>;
+      startSubtitles(request: StartSubtitlesRequest): Promise<StartSubtitlesResult>;
+      cancelSubtitles(): Promise<void>;
+      listSubtitles(request: ListSubtitlesRequest): Promise<AiSubtitleResult[]>;
       getAiKeyStatus(): Promise<AiKeyStatus>;
       setAiKey(key: string): Promise<void>;
       clearAiKey(): Promise<void>;

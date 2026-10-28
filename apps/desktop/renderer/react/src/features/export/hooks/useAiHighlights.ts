@@ -17,6 +17,7 @@ function parseTimeInput(raw: string): number | null {
 export function useAiHighlights(selectedRecordingId: string, recordingBusy: boolean) {
   const [highlightsBusy, setHighlightsBusy] = useState(false);
   const [highlightsStage, setHighlightsStage] = useState<string | null>(null);
+  const [highlightsProgress, setHighlightsProgress] = useState<number | null>(null);
   const [highlightsClips, setHighlightsClips] = useState<EditableHighlight[]>([]);
   const [highlightsError, setHighlightsError] = useState<string | null>(null);
   const [highlightsModel, setHighlightsModel] = useState<string | null>(null);
@@ -32,6 +33,7 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
   useEffect(() => {
     setHighlightsBusy(false);
     setHighlightsStage(null);
+    setHighlightsProgress(null);
     setHighlightsClips([]);
     setHighlightsError(null);
     setHighlightsModel(null);
@@ -58,6 +60,11 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
         if (highlights && typeof highlights.stage === "string") {
           setHighlightsStage(highlights.stage);
         }
+        if (highlights && typeof highlights.progress === "number") {
+          setHighlightsProgress(highlights.progress);
+        } else {
+          setHighlightsProgress(null);
+        }
       }).catch(() => {});
     }, 500);
     return () => {
@@ -72,6 +79,7 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
     }
     setHighlightsBusy(true);
     setHighlightsStage("Starting analysis…");
+    setHighlightsProgress(null);
     setHighlightsError(null);
     setHighlightsTimeError(null);
     try {
@@ -240,6 +248,7 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
   return {
     highlightsBusy,
     highlightsStage,
+    highlightsProgress,
     highlightsClips,
     highlightsError,
     highlightsModel,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { CaptureResolutionId, DeviceOption, LayerId, Scene, SceneId, StudioLayer } from "@/features/studio/types/studio.types";
 import { getCaptureResolution, getSourceDimensions } from "@/features/studio/utils/crop";
 import { isSupportedCaptureCard } from "@/features/studio/utils/devices";
+import { supportedResolutionIds } from "../utils/device-capabilities";
 import { requestVideoInputDevices } from "../utils/video-input-devices";
 
 type UseLayerDevicesOptions = {
@@ -11,6 +12,7 @@ type UseLayerDevicesOptions = {
   setVideoInputError: (error: string | null) => void;
   setVideoInputDevices: (devices: DeviceOption[]) => void;
   setBrowserCaptureStream: (layerId: LayerId, stream: MediaStream | null) => void;
+  stopBrowserCaptureStream: (layerId: LayerId) => void;
   updateLayer: (sceneId: SceneId, layerId: LayerId, update: Partial<StudioLayer>) => void;
 };
 
@@ -21,6 +23,7 @@ export function useLayerDevices({
   setVideoInputError,
   setVideoInputDevices,
   setBrowserCaptureStream,
+  stopBrowserCaptureStream,
   updateLayer,
 }: UseLayerDevicesOptions) {
   const [layersReloading, setLayersReloading] = useState(false);
@@ -57,15 +60,60 @@ export function useLayerDevices({
       const height = requireExactResolution
         ? { exact: resolution.height }
         : { ideal: resolution.height };
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const openStream = (
+        size: { width: number | { exact?: number; ideal?: number }; height: number | { exact?: number; ideal?: number } },
+      ): Promise<MediaStream> => navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
           deviceId: { exact: deviceId },
-          width,
-          height,
+          width: size.width,
+          height: size.height,
           frameRate: { ideal: 60, max: 60 },
         },
       });
+      let stream: MediaStream | null = null;
+      let firstError: unknown = null;
+      try {
+        stream = await openStream({ width, height });
+      } catch (error) {
+        firstError = error;
+      }
+      if (!stream) {
+        // The previous stream can still hold the device while switching
+        // sizes. Release it, then retry the same request once.
+        stopBrowserCaptureStream(layerId);
+        try {
+          stream = await openStream({ width, height });
+        } catch (error) {
+          firstError = firstError ?? error;
+        }
+      }
+      if (!stream && requireExactResolution) {
+        // Capture cards reject exact sizes the current input signal cannot
+        // provide (e.g. 4K while the source runs 720p). Fall back to the
+        // closest size the device actually grants instead of failing.
+        console.warn(`Exact ${resolution.width}x${resolution.height} rejected by ${selectedDevice.name}; falling back to best effort.`);
+        try {
+          stream = await openStream(
+            { width: { ideal: resolution.width }, height: { ideal: resolution.height } },
+          );
+        } catch (error) {
+          firstError = firstError ?? error;
+        }
+      }
+      if (!stream) {
+        throw firstError;
+      }
+      // The label always reflects reality: when the device grants less than
+      // requested, snap to the best fitting preset.
+      const granted = getSourceDimensions(stream);
+      let grantedResolution = captureResolution;
+      if (granted && (granted.width < resolution.width || granted.height < resolution.height)) {
+        const fitting = supportedResolutionIds({ width: granted.width, height: granted.height });
+        if (fitting.length > 0) {
+          grantedResolution = fitting[fitting.length - 1];
+        }
+      }
       const trackSettings = stream.getVideoTracks()[0]?.getSettings();
       console.info(layerKind === "game-capture" ? "Capture card stream settings:" : "Camera stream settings:", {
         device: selectedDevice.name,
@@ -77,7 +125,7 @@ export function useLayerDevices({
       setBrowserCaptureStream(layerId, stream);
       updateLayer(sceneId, layerId, {
         deviceId,
-        captureResolution,
+        captureResolution: grantedResolution,
         sourceDimensions: getSourceDimensions(stream),
       });
     } catch (error) {

@@ -160,6 +160,28 @@ export type FindHighlightsResult = {
   error: string | null;
 };
 
+export type ConvertMicWavRequest = {
+  id: string;
+};
+
+export type MicWavResult = {
+  success: boolean;
+  /** Absolute path of the converted microphone.wav, or null. */
+  path: string | null;
+  error: string | null;
+};
+
+export type MicWavPreviewResult = {
+  success: boolean;
+  data: Uint8Array | null;
+  error: string | null;
+};
+
+export type MicWavStatusResult = {
+  /** Absolute path when microphone.wav already exists in the take, else null. */
+  path: string | null;
+};
+
 export type ExportHighlightClipRequest = {
   id: string;
   /** Index into the persisted suggestion list. */
@@ -178,6 +200,45 @@ export type ExportAllHighlightsRequest = {
 export type HighlightClipExportResult = {
   success: boolean;
   paths: string[];
+  error: string | null;
+};
+
+export type AiSubtitleLanguage = {
+  code: string;
+  name: string;
+};
+
+export type AiSubtitleResult = {
+  code: string;
+  name: string;
+  srtPath: string | null;
+  error?: string;
+};
+
+export type AiSubtitlesState = "IDLE" | "WORKING" | "COMPLETED" | "ERROR";
+
+export type AiSubtitlesStatus = {
+  state: AiSubtitlesState;
+  /** Honest stage label while the job runs (e.g. "Translating Spanish… (2/5)"). Null when idle. */
+  stage: string | null;
+  /** Real upload percent while the wav uploads; null during analysis and translation. */
+  progress: number | null;
+  languages: AiSubtitleResult[];
+  error?: string;
+};
+
+export type StartSubtitlesRequest = {
+  id: string;
+  languages: AiSubtitleLanguage[];
+};
+
+export type ListSubtitlesRequest = {
+  id: string;
+};
+
+export type StartSubtitlesResult = {
+  success: boolean;
+  languages: AiSubtitleResult[];
   error: string | null;
 };
 
@@ -205,6 +266,7 @@ export type RecordingResult = {
   aiShotExport?: AiPreviewStatus;
   aiShortClip?: AiPreviewStatus;
   aiHighlights?: AiHighlightsStatus;
+  aiSubtitles?: AiSubtitlesStatus;
 };
 
 export type RecordingSummary = {

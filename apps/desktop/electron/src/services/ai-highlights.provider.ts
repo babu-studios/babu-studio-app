@@ -25,7 +25,12 @@ export const HIGHLIGHTS_ENV_VAR = "MODEL_API_KEY";
 const MAX_UPLOAD_BYTES = 1_073_741_824; // 1 GiB Files API limit.
 
 export type HighlightsProvider = {
-  analyzeVideo(videoPath: string, durationSeconds: number, signal: AbortSignal): Promise<unknown>;
+  analyzeVideo(
+    videoPath: string,
+    durationSeconds: number,
+    signal: AbortSignal,
+    onUploadProgress?: (fraction: number) => void,
+  ): Promise<unknown>;
 };
 
 export function getModelApiKey(): string | null {
@@ -40,6 +45,47 @@ let keyResolver: KeyResolver = async () => getModelApiKey();
 /** Main process wires the secure key store here; tests can substitute a stub. */
 export function setModelApiKeyResolver(resolver: KeyResolver): void {
   keyResolver = resolver;
+}
+
+export async function resolveModelApiKey(): Promise<string | null> {
+  return keyResolver();
+}
+
+/** Single text completion via the documented Responses endpoint. */
+export async function completeModelText(prompt: string, signal: AbortSignal, timeoutMs = 120_000): Promise<string> {
+  const apiKey = await keyResolver();
+  if (!apiKey) {
+    throw new Error(
+      `Text generation is not configured. Add your Model API key in the AI popup (AI clips > Model API key), or set the ${HIGHLIGHTS_ENV_VAR} environment variable and restart Babu Studio.`,
+    );
+  }
+  const response = await postJson(
+    "/v1/responses",
+    apiKey,
+    {
+      model: HIGHLIGHTS_MODEL_ID,
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: prompt }],
+        },
+      ],
+    },
+    signal,
+    timeoutMs,
+  );
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("The Model API key was rejected. Check the key and restart Babu Studio.");
+  }
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Text generation failed (HTTP ${response.status}).`);
+  }
+  try {
+    return extractResponseText(JSON.parse(response.text));
+  } catch {
+    throw new Error("The model returned an unreadable response.");
+  }
 }
 
 function postJson(
@@ -140,7 +186,12 @@ function buildPrompt(durationSeconds: number): string {
 
 /** Default provider: Files API upload, then Responses API analysis. */
 export const metaHighlightsProvider: HighlightsProvider = {
-  async analyzeVideo(videoPath: string, durationSeconds: number, signal: AbortSignal): Promise<unknown> {
+  async analyzeVideo(
+    videoPath: string,
+    durationSeconds: number,
+    signal: AbortSignal,
+    onUploadProgress?: (fraction: number) => void,
+  ): Promise<unknown> {
     const apiKey = await keyResolver();
     if (!apiKey) {
       throw new Error(
@@ -153,7 +204,7 @@ export const metaHighlightsProvider: HighlightsProvider = {
     }
     // Small-file path stays honest about the documented 50 MB inline limit is
     // handled server-side; everything goes through the Files API reference.
-    const fileId = await uploadVideoFile(videoPath, apiKey, signal);
+    const fileId = await uploadVideoFile(videoPath, apiKey, signal, onUploadProgress);
     const response = await postJson(
       "/v1/responses",
       apiKey,
@@ -188,7 +239,12 @@ export const metaHighlightsProvider: HighlightsProvider = {
   },
 };
 
-function uploadVideoFile(videoPath: string, apiKey: string, signal: AbortSignal): Promise<string> {
+function uploadVideoFile(
+  videoPath: string,
+  apiKey: string,
+  signal: AbortSignal,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
   // Multipart upload without extra libraries: hand-built body, arg-free https.
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
@@ -250,9 +306,23 @@ function uploadVideoFile(videoPath: string, apiKey: string, signal: AbortSignal)
             // Stream the file without loading it into memory.
             void import("node:fs").then(({ createReadStream }) => {
               request.write(header);
+              const total = header.length + info.size + footer.length;
+              let sent = header.length;
+              const report = (): void => {
+                onProgress?.(Math.min(sent / total, 1));
+              };
+              report();
               const stream = createReadStream(videoPath);
               stream.on("error", (error) => request.destroy(error));
-              stream.on("end", () => request.end(footer));
+              stream.on("data", (chunk: Buffer | string) => {
+                sent += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+                report();
+              });
+              stream.on("end", () => {
+                sent = total;
+                report();
+                request.end(footer);
+              });
               stream.pipe(request, { end: false });
             }, reject);
           },
