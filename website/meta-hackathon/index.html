@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Babu Studio — Record the game. Let Meta AI cut the clips.</title>
+<meta name="description" content="Babu Studio: macOS game-recording studio with a 5-step AI clips wizard powered by Meta's Model API.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar" id="top">
+  <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Babu Studio</a>
+  <nav class="topnav" aria-label="Page">
+    <a href="#ai-pipeline">AI pipeline</a>
+    <a href="#features">Features</a>
+    <a href="#meta">Meta models</a>
+    <a href="#install">Install</a>
+    <a href="#download">Download</a>
+  </nav>
+  <a class="btn btn-small" href="#download">Get the app</a>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="hero-copy">
+      <h1>Record the game.<br>Let Meta AI cut the clips.</h1>
+      <p class="lede">Babu Studio is a macOS recording studio for gamers and creators. Capture every source separately, then turn a full recording into short clips in five guided steps — highlights, mic-to-WAV, and multilingual subtitles powered by <strong>muse-voice-transcribe-1.0</strong> and <strong>muse-spark-1.3</strong>.</p>
+      <div class="hero-actions">
+        <a class="btn" href="#download">Download for Mac</a>
+        <a class="btn btn-ghost" href="#ai-pipeline">See the AI pipeline</a>
+      </div>
+      <dl class="hero-stats">
+        <div><dt data-count="5">0</dt><dd>guided AI steps</dd></div>
+        <div><dt data-count="78">0</dt><dd>subtitle languages</dd></div>
+        <div><dt data-count="2">0</dt><dd>Meta models inside</dd></div>
+      </dl>
+    </div>
+    <div class="hero-visual" aria-hidden="true">
+      <div class="app-window">
+        <div class="app-titlebar"><span></span><span></span><span></span><em>AI clips — step 3 of 5</em></div>
+        <div class="app-body">
+          <div class="clip-row"><i style="--w:82%"></i><b>Last-stand firefight</b><span>85%</span></div>
+          <div class="clip-row"><i style="--w:64%"></i><b>Triple kill hallway</b><span>72%</span></div>
+          <div class="clip-row"><i style="--w:47%"></i><b>Comeback round</b><span>61%</span></div>
+          <div class="wave" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="export-bar"><i></i><em>Exporting clip 2 of 3… 43%</em></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="strip" id="ai-pipeline">
+    <div class="section-head">
+      <h2>The 5-step AI clips wizard</h2>
+      <p>One popup, one visible step at a time. Real percentages everywhere — upload bytes, FFmpeg render time, per-clip export progress. Nothing is faked.</p>
+    </div>
+    <ol class="pipeline">
+      <li class="reveal"><span class="p-num">1</span><div><h3>Setup</h3><p>Pick a recording and paste your Model API key. The key never leaves the main process.</p></div></li>
+      <li class="reveal"><span class="p-num">2</span><div><h3>AI clip</h3><p>Render a compact 360p file plus a 30-second short clip, composed from your exact scene.</p></div></li>
+      <li class="reveal"><span class="p-num">3</span><div><h3>Highlights</h3><p>Meta finds the best moments with confidence scores. Export one clip or all — each with a live progress bar.</p></div></li>
+      <li class="reveal"><span class="p-num">4</span><div><h3>Mic WAV</h3><p>Convert the microphone track to 16&nbsp;kHz mono <code>microphone.wav</code>, the standard shape for speech AI.</p></div></li>
+      <li class="reveal"><span class="p-num">5</span><div><h3>Subtitles</h3><p>Transcribe once, translate into up to 78 languages, save one <code>.srt</code> per language — each with its own player.</p></div></li>
+    </ol>
+  </section>
+
+  <section class="strip strip-alt" id="features">
+    <div class="section-head">
+      <h2>Built for recording first</h2>
+      <p>The AI is only half the story. Every source is captured separately and stays untouched.</p>
+    </div>
+    <div class="feature-rows">
+      <article class="reveal"><h3>Separate masters</h3><p>Capture-card video, webcam, game audio and microphone each land in their own file under <code>master/</code>, synced on the capture clock. The originals are never modified by exports.</p></article>
+      <article class="reveal"><h3>Two layouts, one scene</h3><p>Landscape and portrait placements are adjusted independently, then rendered to <code>horizontal.mp4</code> and <code>vertical.mp4</code> with your mixer levels baked in.</p></article>
+      <article class="reveal"><h3>Honest progress</h3><p>Upload shows real bytes. Exports show real FFmpeg time. Analysis shows stage labels, never invented timestamps or percentages.</p></article>
+      <article class="reveal"><h3>Tidy take folders</h3><p>Each recording keeps <code>master/</code> sources apart from <code>export/</code> renders, with AI files grouped under <code>export/ai/</code> — subtitles and highlights in their own folders.</p></article>
+    </div>
+  </section>
+
+  <section class="strip" id="meta">
+    <div class="section-head">
+      <h2>Powered by Meta's Model API</h2>
+      <p>Two hosted models do all the understanding. Everything else runs on your Mac.</p>
+    </div>
+    <div class="model-cards">
+      <article class="reveal">
+        <h3>muse-spark-1.3</h3>
+        <p class="model-job">Video → highlights</p>
+        <p>Watches the compact <code>ai-360p.mp4</code> and returns the best moments with confidence scores, titles, and reasons. Clamped to the real take duration, padded to a watchable minimum — never invented.</p>
+      </article>
+      <article class="reveal">
+        <h3>muse-voice-transcribe-1.0</h3>
+        <p class="model-job">Speech → text</p>
+        <p>Transcribes <code>microphone.wav</code> in one request. Segment timestamps come only from the API response — the app never invents them. A compliant WAV uploads directly; anything else is converted to a temporary file while the original is preserved.</p>
+      </article>
+      <article class="reveal">
+        <h3>muse-spark-1.3</h3>
+        <p class="model-job">English → 78 languages</p>
+        <p>Translates every transcript turn while preserving segment IDs and timestamps, then formats the result as <code>.srt</code>. Failures arrive as toasts with the surviving languages still saved.</p>
+      </article>
+    </div>
+    <p class="model-note reveal">Spoken dubbing waits on Meta releasing a text-to-speech model — the Model API returns text only today, so the app ships subtitles, not synthetic voices.</p>
+  </section>
+
+  <section class="strip strip-alt" id="install">
+    <div class="section-head">
+      <h2>Install in a minute</h2>
+      <p>macOS only. Apple Silicon and Intel builds. FFmpeg rides inside the app — nothing else to install.</p>
+    </div>
+    <ol class="install-steps">
+      <li class="reveal"><span class="p-num">1</span><div><h3>Download the .dmg</h3><p>Pick the build that matches your Mac. Unsure? Apple menu → About This Mac: “Chip: Apple M…” means Apple Silicon.</p></div></li>
+      <li class="reveal"><span class="p-num">2</span><div><h3>Drag to Applications</h3><p>Open the <code>.dmg</code> and drag <strong>Babu Studio</strong> into <strong>Applications</strong>.</p></div></li>
+      <li class="reveal"><span class="p-num">3</span><div><h3>Approve the first launch</h3><p>The app isn't notarized, so macOS asks once. Right-click → Open, or System Settings → Privacy &amp; Security → Open Anyway.</p></div></li>
+      <li class="reveal"><span class="p-num">4</span><div><h3>Paste your Model API key</h3><p>Open the AI popup, step 1, and save your key from the <a href="https://dev.meta.ai/">Meta developer portal</a>. Recording works without it; AI steps need it.</p></div></li>
+    </ol>
+  </section>
+
+  <section class="strip" id="download">
+    <div class="section-head">
+      <h2>Download Babu Studio</h2>
+      <p>Free installers from the GitHub releases page.</p>
+    </div>
+    <div class="dl-cards">
+      <a class="dl-card reveal" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-arm64.dmg">
+        <h3>Apple Silicon</h3><p>Babu-Studio-arm64.dmg · M1 and later</p><span class="btn">Download .dmg</span>
+      </a>
+      <a class="dl-card reveal" href="https://github.com/babu-studios/babu-studio-app/releases/latest/download/Babu-Studio-x64.dmg">
+        <h3>Intel Mac</h3><p>Babu-Studio-x64.dmg · 64-bit Intel</p><span class="btn">Download .dmg</span>
+      </a>
+    </div>
+    <p class="dl-alt reveal">Prefer the full list? See <a href="https://github.com/babu-studios/babu-studio-app/releases">all releases</a> or the <a href="https://babu-studios.github.io/babu-studio-app/">download page</a>.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Babu Studio · Built with the Meta Model API</p>
+  <p><a href="https://github.com/babu-studios/babu-studio-app">Source on GitHub</a> · <a href="https://dev.meta.ai/docs">Meta Model API docs</a></p>
+</footer>
+<script src="site.js"></script>
+</body>
+</html>
