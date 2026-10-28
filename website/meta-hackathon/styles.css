@@ -117,9 +117,13 @@ a { color: var(--green); }
 .pipeline, .install-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
 .pipeline li, .install-steps li {
   display: grid; grid-template-columns: 44px 1fr; gap: 1rem;
+  align-items: start;
   padding: 1.1rem 0; border-top: 1px solid var(--line);
 }
 .pipeline li:last-child, .install-steps li:last-child { border-bottom: 1px solid var(--line); }
+/* Install steps mirror the pipeline numbers exactly. */
+.install-steps { list-style: none; margin: 0; padding: 0; padding-inline-start: 0; display: grid; }
+.install-steps > li { margin: 0; }
 .p-num {
   width: 40px; height: 40px;
   border: 1px solid var(--green); color: var(--green);
