@@ -612,6 +612,50 @@
   display: none;
 }
 
+/* Compact preview player: play button plus seekable timer bar only */
+.ai-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--mat-border, #36373e);
+  border-radius: 4px;
+  background: var(--mat-card, #28292f);
+}
+
+.ai-player .icon-button {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.ai-player-time {
+  flex: 0 0 auto;
+  color: var(--mat-ink-2, #b7bdc6);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ai-player-track {
+  position: relative;
+  height: 6px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--mat-border, #36373e);
+  cursor: pointer;
+}
+
+.ai-player-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mat-green, #3fa97c);
+}
+
 /* Subtitle results */
 .ai-srt-list {
   display: grid;
@@ -716,14 +760,6 @@
 .ai-scroll-hint svg {
   width: 13px;
   height: 13px;
-}
-
-/* Native audio preview, themed to the dialog */
-.ai-audio-player {
-  width: 100%;
-  margin-top: 12px;
-  accent-color: var(--mat-green, #3fa97c);
-  color-scheme: dark;
 }
 
 /* Clip-length chip: neutral, distinct from the green confidence chip */

@@ -112,6 +112,13 @@ function StatusPill({ tone, label }: { tone: StepTone; label: string }) {
   return <span className={`ai-step-pill ai-step-pill--${tone}`}>{label}</span>;
 }
 
+function formatTrackTime(totalSeconds: number): string {
+  const total = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(total / 60);
+  const seconds = (total % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 function formatClipLength(startTime: number, endTime: number): string {
   const total = Math.max(0, endTime - startTime);
   const rounded = Math.round(total * 10) / 10;
@@ -145,6 +152,103 @@ function AiProgress({ label, value, ariaLabel, indeterminate = false }: {
       >
         <span style={indeterminate ? undefined : { width: `${value}%` }} />
       </div>
+    </div>
+  );
+}
+
+function AiAudioPlayer({ label, src }: { label: string; src: string }) {
+  const elementRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  // Detached audio elements keep playing after unmount: stop on cleanup.
+  useEffect(() => () => {
+    elementRef.current?.pause();
+  }, []);
+
+  async function toggle(): Promise<void> {
+    const element = elementRef.current;
+    if (!element) {
+      return;
+    }
+    if (playing) {
+      element.pause();
+      return;
+    }
+    // Independent positions, but never overlapping sound.
+    document.querySelectorAll<HTMLAudioElement>("audio.ai-row-audio").forEach((other) => {
+      if (other !== element) {
+        other.pause();
+      }
+    });
+    try {
+      await element.play();
+    } catch {
+      // Playback was interrupted; the pause handler clears the state.
+    }
+  }
+
+  function seek(ratio: number): void {
+    const element = elementRef.current;
+    if (element && duration > 0) {
+      element.currentTime = duration * Math.min(1, Math.max(0, ratio));
+    }
+  }
+
+  return (
+    <div className="ai-player" aria-label={label}>
+      <button
+        className="icon-button"
+        type="button"
+        aria-label={playing ? `Pause ${label}` : `Play ${label}`}
+        onClick={() => void toggle()}
+      >
+        <Icon name={playing ? "pause" : "play"} />
+      </button>
+      <span className="ai-player-time">
+        {formatTrackTime(elapsed)} / {formatTrackTime(duration)}
+      </span>
+      <div
+        className="ai-player-track"
+        role="slider"
+        aria-label={`Seek ${label}`}
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        aria-valuenow={Math.round(elapsed)}
+        tabIndex={0}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          if (rect.width > 0) {
+            seek((event.clientX - rect.left) / rect.width);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+            return;
+          }
+          event.preventDefault();
+          seek((elapsed + (event.key === "ArrowRight" ? 5 : -5)) / Math.max(duration, 1));
+        }}
+      >
+        <span
+          className="ai-player-fill"
+          style={{ width: `${duration > 0 ? (elapsed / duration) * 100 : 0}%` }}
+        />
+      </div>
+      <audio
+        ref={elementRef}
+        className="ai-row-audio"
+        src={src}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
+        onLoadedMetadata={(event) => {
+          setDuration(event.currentTarget.duration);
+          setElapsed(0);
+        }}
+      />
     </div>
   );
 }
@@ -214,9 +318,7 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
   const [keyInput, setKeyInput] = useState("");
   const [keyEditing, setKeyEditing] = useState(false);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["en"]);
-  const rowAudioRef = useRef<HTMLAudioElement | null>(null);
-  const [playingCode, setPlayingCode] = useState<string | null>(null);
-  const pendingPlayCode = useRef<string | null>(null);
+
   useEffect(() => {
     if (open) {
       setKeyInput("");
@@ -251,7 +353,12 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
   const step1Progress = aiShotExportBusy ? aiShotExportProgress : aiShotExportPath ? 100 : 0;
   const step2Tone = stepTone(highlightsBusy, highlightsClips.length > 0 ? aiShotExportPath : null, highlightsError, highlightsLocked);
 
+  const setupReady = Boolean(selectedRecordingId) && keyConfigured;
+
   function isStepLocked(step: AiStepId): boolean {
+    if (step !== "setup" && !setupReady) {
+      return true;
+    }
     if (step === "clip" || step === "micwav") {
       return recordings.length === 0;
     }
@@ -264,12 +371,28 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
     return false;
   }
 
+  // Leaving a step requires its own checkpoint: setup needs a recording and
+  // the model key, the clip step needs a generated or selected clip, and the
+  // mic step needs the converted wav. Highlights and audio stay skippable.
+  function isStepReady(step: AiStepId): boolean {
+    if (step === "setup") {
+      return setupReady;
+    }
+    if (step === "clip") {
+      return clipReady;
+    }
+    if (step === "micwav") {
+      return micWavPath !== null;
+    }
+    return true;
+  }
+
   function stepState(step: AiStepId): StepTone {
     if (isStepLocked(step)) {
       return "locked";
     }
     if (step === "setup") {
-      return selectedRecordingId ? "done" : "idle";
+      return setupReady ? "done" : "idle";
     }
     if (step === "clip") {
       return step1Tone;
@@ -295,6 +418,15 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
   const activeIndex = STEPS.findIndex((step) => step.id === activeStep);
   const nextStep = STEPS.slice(activeIndex + 1).find((step) => !isStepLocked(step.id)) ?? null;
   const prevStep = [...STEPS.slice(0, activeIndex)].reverse().find((step) => !isStepLocked(step.id)) ?? null;
+  const isLastStep = activeIndex === STEPS.length - 1;
+  const canAdvance = isStepReady(activeStep);
+  const advanceHint = !canAdvance
+    ? activeStep === "setup"
+      ? "Select a recording and add your Model API key first"
+      : activeStep === "clip"
+        ? "Generate or select an AI clip first"
+        : "Convert the microphone file first"
+    : undefined;
 
   function toggleLanguage(code: string): void {
     setSelectedLanguages((current) => (
@@ -302,44 +434,13 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
     ));
   }
 
-  // One shared element previews the take's microphone audio behind every
-  // subtitle row; loading happens on first play.
+  // Players load lazily: fetch the audio as soon as a wav path exists on
+  // the step that needs it instead of waiting for a preview button.
   useEffect(() => {
-    if (!micPreviewUrl) {
-      pendingPlayCode.current = null;
-      setPlayingCode(null);
-      return;
+    if (open && (activeStep === "micwav" || activeStep === "audio") && micWavPath && !micPreviewUrl && !micPreviewLoading) {
+      void onLoadMicPreview();
     }
-    const code = pendingPlayCode.current;
-    pendingPlayCode.current = null;
-    if (code && rowAudioRef.current) {
-      rowAudioRef.current.play().then(() => {
-        setPlayingCode(code);
-      }).catch(() => {});
-    }
-  }, [micPreviewUrl]);
-
-  async function toggleRowAudio(code: string): Promise<void> {
-    const element = rowAudioRef.current;
-    if (playingCode === code) {
-      element?.pause();
-      setPlayingCode(null);
-      return;
-    }
-    if (!micPreviewUrl) {
-      pendingPlayCode.current = code;
-      await onLoadMicPreview();
-      return;
-    }
-    if (element) {
-      try {
-        await element.play();
-        setPlayingCode(code);
-      } catch {
-        // Playback was interrupted; the pause handler clears the state.
-      }
-    }
-  }
+  }, [open, activeStep, micWavPath, micPreviewUrl, micPreviewLoading, onLoadMicPreview]);
 
   function closeKeyEditor(): void {
     setKeyInput("");
@@ -415,17 +516,7 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
           })}
         </ol>
 
-          {nextStep ? (
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={`Next step: ${nextStep.label}`}
-              title={`Next: ${nextStep.label}`}
-              onClick={() => setActiveStep(nextStep.id)}
-            >
-              <Icon name="chevron-right" />
-            </button>
-          ) : (
+          {isLastStep || !nextStep ? (
             <button
               className="icon-button"
               type="button"
@@ -435,6 +526,17 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
               onClick={() => setOpen(false)}
             >
               <Icon name="check" />
+            </button>
+          ) : (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={canAdvance ? `Next step: ${nextStep.label}` : (advanceHint ?? "Complete this step first")}
+              title={canAdvance ? `Next: ${nextStep.label}` : advanceHint}
+              disabled={!canAdvance}
+              onClick={() => setActiveStep(nextStep.id)}
+            >
+              <Icon name="chevron-right" />
             </button>
           )}
         </div>
@@ -830,22 +932,27 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                 <code>{micWavPath}</code>
               </p>
             )}
-            {micWavPath && !micPreviewUrl && (
+            {micPreviewLoading && (
+              <AiProgress
+                label="Loading audio"
+                value={0}
+                ariaLabel="Audio loading"
+                indeterminate
+              />
+            )}
+            {micPreviewError && !micPreviewUrl && !micPreviewLoading && (
               <div className="ai-step-actions">
                 <button
                   className="ai-step-button ai-step-button--ghost"
                   type="button"
-                  disabled={busy || loading || micPreviewLoading || anyAiTaskBusy}
                   onClick={() => void onLoadMicPreview()}
                 >
-                  {micPreviewLoading ? "Loading audio…" : "Preview audio"}
+                  Retry audio load
                 </button>
               </div>
             )}
             {micPreviewUrl && (
-              <audio className="ai-audio-player" controls src={micPreviewUrl}>
-                Your browser does not support audio preview.
-              </audio>
+              <AiAudioPlayer label="Microphone audio preview" src={micPreviewUrl} />
             )}
           </div>
         )}
@@ -916,20 +1023,22 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                 indeterminate
               />
             )}
+            {micPreviewError && !micPreviewUrl && !micPreviewLoading && (
+              <div className="ai-step-actions">
+                <button
+                  className="ai-step-button ai-step-button--ghost"
+                  type="button"
+                  onClick={() => void onLoadMicPreview()}
+                >
+                  Load audio
+                </button>
+              </div>
+            )}
             {subtitlesResults.length > 0 && (
               <ul className="ai-srt-list">
                 {subtitlesResults.map((result) => (
                   <li key={result.code} className="ai-highlight">
                     <div className="ai-highlight-head">
-                      <button
-                        className="icon-button"
-                        type="button"
-                        aria-label={playingCode === result.code ? `Pause ${result.name} preview` : `Play ${result.name} preview`}
-                        title={playingCode === result.code ? "Pause" : "Play microphone audio"}
-                        onClick={() => void toggleRowAudio(result.code)}
-                      >
-                        <Icon name={playingCode === result.code ? "pause" : "play"} />
-                      </button>
                       <strong>{AUDIO_LANGUAGES.find((language) => language.code === result.code)?.label ?? result.name}</strong>
                       <span className={`ai-step-pill ${result.srtPath ? "ai-step-pill--done" : result.error ? "ai-step-pill--error" : "ai-step-pill--active"}`}>
                         {result.srtPath ? "Saved" : result.error ? "Failed" : "Working…"}
@@ -943,16 +1052,16 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                     ) : result.error ? (
                       <p className="ai-highlight-reason">{result.error}</p>
                     ) : null}
+                    {micPreviewUrl && (
+                      <AiAudioPlayer
+                        label={`${result.name} audio preview`}
+                        src={micPreviewUrl}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
             )}
-            <audio
-              ref={rowAudioRef}
-              className="ai-row-audio"
-              src={micPreviewUrl ?? undefined}
-              onPause={() => setPlayingCode(null)}
-            />
             <div className="ai-step-actions">
               <button
                 className="ai-step-button ai-step-button--ghost"
@@ -990,7 +1099,6 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
             </p>
           </div>
         )}
-
       </section>
     </div>
   );
