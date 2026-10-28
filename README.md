@@ -33,6 +33,8 @@ A live System Resources panel in the top bar shows CPU, GPU, memory, and disk us
 
 The AI popup's Audio step generates multilingual subtitles from the take's microphone track: a compliant `microphone.wav` (mono 16-bit PCM at 16 or 24 kHz) uploads directly, anything else is converted to a temporary 24 kHz file while the original is preserved. The track is transcribed once with `muse-voice-transcribe-1.0` (timestamps come only from the API response, never invented), each selected language is translated with `muse-spark-1.3`, and one `subtitles-<code>.srt` is saved next to the recording. Progress shows real upload bytes, generation cancels cleanly, failures surface as toasts, and the Model API key never leaves the main process.
 
+Each subtitle row can also be dubbed: a per-row Dub button voices that language's `.srt` with an offline macOS voice (`say`, no network or API key) and saves `dubbed-<code>.wav` next to the recording on the original subtitle timeline — overlong cues are sped up (max 2x) and trimmed to their slot so nothing overlaps. Dubbed tracks play in their own per-row player, separate from the original microphone audio. Languages without a matching offline voice report a clear per-row error instead of substituting another language's voice; dubbing needs macOS and FFmpeg, cancels cleanly, and failures surface as toasts.
+
 ## Useful commands
 
 ```sh

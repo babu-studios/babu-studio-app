@@ -10,6 +10,8 @@ import type {
   NativeCaptureDevice,
   AiArtifactsRequest,
   AiArtifactsResult,
+  AiDubResult,
+  AiDubStatus,
   AiHighlightSuggestion,
   AiHighlightsStatus,
   AiPreviewResult,
@@ -18,6 +20,7 @@ import type {
   AiSubtitleResult,
   AiSubtitlesStatus,
   ConvertMicWavRequest,
+  DubPreviewRequest,
   ExportAiPreviewRequest,
   ExportAllHighlightsRequest,
   ExportHighlightClipRequest,
@@ -37,6 +40,8 @@ import type {
   RecordingSourceFile,
   RecordingSummary,
   ListSubtitlesRequest,
+  StartDubRequest,
+  StartDubResult,
   StartRecordingRequest,
   StartSubtitlesRequest,
   StartSubtitlesResult,
@@ -49,6 +54,8 @@ import {
   type HighlightsProvider,
 } from "./ai-highlights.provider";
 import { transcribeWav, translateTurns, type TranslatedLanguage } from "./ai-subtitles.provider";
+import { synthesizeDubbedTrack } from "./ai-dub.provider";
+import { voiceForLanguage } from "./dub-voices";
 import { formatSrt, isCompliantWavHeader } from "./subtitles-srt.js";
 import {
   DEFAULT_EXPORT_RESOLUTION,
@@ -382,6 +389,14 @@ export class RecordingService {
   };
   private aiSubtitlesAbort?: AbortController;
   private aiSubtitlesRecordingId?: string;
+  private aiDubState: AiDubStatus = {
+    state: "IDLE",
+    stage: null,
+    progress: null,
+    languages: [],
+  };
+  private aiDubAbort?: AbortController;
+  private aiDubRecordingId?: string;
 
   private isScopeCancelled(scope: "export" | "ai-preview" | "ai-shot" | "ai-short-clip"): boolean {
     switch (scope) {
@@ -1428,6 +1443,37 @@ export class RecordingService {
     }
   }
 
+  // Reads a dubbed track for in-app preview. The code is validated and the
+  // path is fixed to the take directory; the renderer never supplies a path.
+  async readDubPreview(request: DubPreviewRequest): Promise<MicWavPreviewResult> {
+    if (this.active || this.startPromise) {
+      throw new Error("Stop the current recording before previewing dubbed audio.");
+    }
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      throw new Error("Select a valid recording to preview dubbed audio.");
+    }
+    if (typeof request?.code !== "string" || !/^[a-z]{2,3}(-[a-z]{2})?$/i.test(request.code)) {
+      throw new Error("Select a valid dubbed language to preview.");
+    }
+    const wavPath = join(this.recordingsRoot(), request.id, `dubbed-${request.code.toLowerCase()}.wav`);
+    let info;
+    try {
+      info = await stat(wavPath);
+    } catch {
+      throw new Error("Generate the dubbed audio before previewing it.");
+    }
+    if (info.size > 200_000_000) {
+      throw new Error("The dubbed file is too large to preview.");
+    }
+    try {
+      const data = await readFile(wavPath);
+      return { success: true, data: new Uint8Array(data), error: null };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, data: null, error: message };
+    }
+  }
+
   private assertNoHighlightExport(action: string): void {
     if (this.highlightExportInFlight) {
       throw new Error(`Wait for the highlight export to finish before ${action}.`);
@@ -1573,6 +1619,162 @@ export class RecordingService {
       if (match) {
         const code = match[1].toLowerCase();
         results.push({ code, name: code, srtPath: join(directory, entry) });
+      }
+    }
+    return results.sort((a, b) => a.code.localeCompare(b.code));
+  }
+
+  async startDub(request: StartDubRequest): Promise<StartDubResult> {
+    if (this.active || this.startPromise) {
+      throw new Error("Stop the current recording before generating dubbed audio.");
+    }
+    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
+      throw new Error("Wait for the selected layout exports to finish before generating dubbed audio.");
+    }
+    if (this.aiHighlightsState.state === "ANALYZING") {
+      throw new Error("Wait for highlight analysis to finish before generating dubbed audio.");
+    }
+    if (this.aiSubtitlesState.state === "WORKING") {
+      throw new Error("Wait for subtitle generation to finish before generating dubbed audio.");
+    }
+    if (this.aiDubState.state === "WORKING") {
+      throw new Error("Dubbed audio generation is already running.");
+    }
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      throw new Error("Select a valid recording to generate dubbed audio.");
+    }
+    const languages = sanitizeSubtitleLanguages(request.languages);
+    const directory = join(this.recordingsRoot(), request.id);
+    try {
+      await stat(join(directory, PROJECT_FILE));
+    } catch {
+      throw new Error("The selected recording could not be found.");
+    }
+    const abort = new AbortController();
+    this.aiDubAbort = abort;
+    this.aiDubRecordingId = request.id;
+    this.aiDubState = {
+      state: "WORKING",
+      stage: "Preparing voices…",
+      progress: null,
+      languages: languages.map((language) => ({ ...language, srtPath: null, wavPath: null })),
+    };
+    const results: AiDubResult[] = [];
+    try {
+      for (let index = 0; index < languages.length; index += 1) {
+        const language = languages[index];
+        if (abort.signal.aborted) {
+          throw new Error("Dubbing cancelled");
+        }
+        this.aiDubState = {
+          ...this.aiDubState,
+          stage: `Voicing ${language.name}… (${index + 1}/${languages.length})`,
+          progress: null,
+          languages: [...results, ...languages.slice(index).map((rest) => ({ ...rest, srtPath: null, wavPath: null }))],
+        };
+        try {
+          const srtPath = join(directory, `subtitles-${language.code}.srt`);
+          try {
+            await stat(srtPath);
+          } catch {
+            throw new Error(`Generate ${language.name} subtitles before dubbing them.`);
+          }
+          const voice = voiceForLanguage(language.code);
+          if (!voice) {
+            throw new Error(`No offline voice is available for ${language.name} yet.`);
+          }
+          const wavPath = join(directory, `dubbed-${language.code}.wav`);
+          await synthesizeDubbedTrack({
+            srtPath,
+            voice: voice.voice,
+            outPath: wavPath,
+            signal: abort.signal,
+            onProgress: (progress) => {
+              if (this.aiDubAbort === abort && this.aiDubState.state === "WORKING") {
+                this.aiDubState = {
+                  ...this.aiDubState,
+                  stage: progress.phase === "assembling"
+                    ? `Assembling ${language.name}…`
+                    : `Voicing ${language.name}… (${progress.cueIndex}/${progress.cueTotal})`,
+                  progress: progress.percent,
+                };
+              }
+            },
+          });
+          results.push({ ...language, srtPath, wavPath, voice: voice.voice });
+        } catch (error) {
+          if (abort.signal.aborted) {
+            throw new Error("Dubbing cancelled");
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          results.push({ ...language, srtPath: null, wavPath: null, error: message });
+        }
+      }
+      const failed = results.filter((result) => result.error);
+      if (failed.length === results.length) {
+        const message = failed[0]?.error ?? "Dubbed audio generation failed.";
+        this.aiDubState = { state: "ERROR", stage: null, progress: null, languages: results, error: message };
+        return { success: false, languages: results, error: message };
+      }
+      this.aiDubState = { state: "COMPLETED", stage: null, progress: 100, languages: results };
+      return {
+        success: true,
+        languages: results,
+        error: failed.length > 0 ? `${failed.length} of ${results.length} languages failed; the rest are saved.` : null,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = abort.signal.aborted || message === "Dubbing cancelled";
+      this.aiDubState = {
+        state: cancelled ? "IDLE" : "ERROR",
+        stage: null,
+        progress: null,
+        languages: results,
+        ...(cancelled ? {} : { error: message }),
+      };
+      if (cancelled) {
+        throw new Error("Dubbing cancelled");
+      }
+      return { success: false, languages: results, error: message };
+    } finally {
+      if (this.aiDubAbort === abort) {
+        this.aiDubAbort = undefined;
+      }
+    }
+  }
+
+  cancelDub(): void {
+    if (this.aiDubState.state === "WORKING") {
+      this.aiDubAbort?.abort();
+    }
+  }
+
+  // Every dubbed-*.wav already saved in the take, regardless of which run
+  // produced it. The matching subtitles-*.srt resolves alongside each row.
+  async listDubs(request: ListSubtitlesRequest): Promise<AiDubResult[]> {
+    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
+      return [];
+    }
+    const directory = join(this.recordingsRoot(), request.id);
+    let entries;
+    try {
+      entries = await readdir(directory);
+    } catch {
+      return [];
+    }
+    const files = new Set(entries);
+    const results: AiDubResult[] = [];
+    for (const entry of entries) {
+      const match = /^dubbed-([a-z]{2,3}(?:-[a-z]{2})?)\.wav$/i.exec(entry);
+      if (match) {
+        const code = match[1].toLowerCase();
+        const srtFile = `subtitles-${code}.srt`;
+        results.push({
+          code,
+          name: code,
+          srtPath: files.has(srtFile) ? join(directory, srtFile) : null,
+          wavPath: join(directory, entry),
+        });
       }
     }
     return results.sort((a, b) => a.code.localeCompare(b.code));
@@ -1889,6 +2091,10 @@ export class RecordingService {
       aiSubtitles: {
         ...this.aiSubtitlesState,
         languages: this.aiSubtitlesState.languages.map((language) => ({ ...language })),
+      },
+      aiDub: {
+        ...this.aiDubState,
+        languages: this.aiDubState.languages.map((language) => ({ ...language })),
       },
     };
   }

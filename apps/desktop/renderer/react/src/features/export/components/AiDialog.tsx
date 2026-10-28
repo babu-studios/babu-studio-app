@@ -156,7 +156,7 @@ function AiProgress({ label, value, ariaLabel, indeterminate = false }: {
   );
 }
 
-function AiAudioPlayer({ label, src }: { label: string; src: string }) {
+function AiAudioPlayer({ label, src, autoPlay }: { label: string; src: string; autoPlay?: boolean }) {
   const elementRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -241,6 +241,7 @@ function AiAudioPlayer({ label, src }: { label: string; src: string }) {
         className="ai-row-audio"
         src={src}
         preload="metadata"
+        autoPlay={autoPlay}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
@@ -249,6 +250,68 @@ function AiAudioPlayer({ label, src }: { label: string; src: string }) {
           setElapsed(0);
         }}
       />
+    </div>
+  );
+}
+
+// Dubbed tracks load on demand: the first play fetches the wav bytes, later
+// plays reuse the object URL. Each instance is an independent player.
+function DubAudioPlayer({ recordingId, code, label }: { recordingId: string; code: string; label: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => () => {
+    setUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current);
+      }
+      return null;
+    });
+  }, [recordingId, code]);
+
+  async function loadAndPlay(): Promise<void> {
+    if (loading || url) {
+      return;
+    }
+    if (typeof window.babuStudio.dubPreview !== "function") {
+      setError("Dubbed playback needs the latest app build. Restart the app and try again.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await window.babuStudio.dubPreview({ id: recordingId, code });
+      if (result.success && result.data) {
+        const bytes = new Uint8Array(result.data.byteLength);
+        bytes.set(result.data);
+        setUrl(URL.createObjectURL(new Blob([bytes], { type: "audio/wav" })));
+      } else {
+        setError(result.error ?? "Unable to load dubbed audio.");
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load dubbed audio.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (url) {
+    return <AiAudioPlayer label={label} src={url} autoPlay />;
+  }
+  return (
+    <div className="ai-player" aria-label={label}>
+      <button
+        className="icon-button"
+        type="button"
+        aria-label={loading ? `Loading ${label}` : `Play ${label}`}
+        disabled={loading}
+        onClick={() => void loadAndPlay()}
+      >
+        <Icon name="play" />
+      </button>
+      <span className="ai-player-time">{loading ? "Loading dubbed audio…" : "Dubbed audio ready"}</span>
+      {error && <span className="ai-highlight-reason">{error}</span>}
     </div>
   );
 }
@@ -307,11 +370,19 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
     subtitlesError,
     onStartSubtitles,
     onCancelSubtitles,
+    dubBusy,
+    dubStage,
+    dubProgress,
+    dubResults,
+    dubError,
+    onStartDub,
+    onCancelDub,
   } = dialog;
   const highlightsExportBusy = exportingIndex !== null || exportingAll;
   // One AI job at a time: any running export, analysis, or clip export locks
   // every other AI button in this popup.
-  const anyAiTaskBusy = aiShotExportBusy || highlightsBusy || highlightsExportBusy || micWavBusy || subtitlesBusy;
+  const anyAiTaskBusy = aiShotExportBusy || highlightsBusy || highlightsExportBusy || micWavBusy || subtitlesBusy || dubBusy;
+  const dubByCode = new Map(dubResults.map((dub) => [dub.code, dub]));
   const clipReady = aiShotExportPath !== null || selectedAiSourceFile !== null;
   const highlightsLocked = !clipReady;
   const [activeStep, setActiveStep] = useState<AiStepId>("setup");
@@ -330,7 +401,7 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
   // AI errors always surface as toasts (once per distinct message), never inline.
   const toastedErrors = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const texts = [aiShotExportError, highlightsError, highlightsTimeError, keyError, micWavError, subtitlesError, micPreviewError]
+    const texts = [aiShotExportError, highlightsError, highlightsTimeError, keyError, micWavError, subtitlesError, micPreviewError, dubError]
       .filter((text): text is string => typeof text === "string" && text.length > 0);
     if (texts.length === 0) {
       toastedErrors.current.clear();
@@ -342,7 +413,7 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
         onErrorToast(text);
       }
     }
-  }, [aiShotExportError, highlightsError, highlightsTimeError, keyError, micWavError, subtitlesError, micPreviewError, onErrorToast]);
+  }, [aiShotExportError, highlightsError, highlightsTimeError, keyError, micWavError, subtitlesError, micPreviewError, dubError, onErrorToast]);
   if (!open) {
     return null;
   }
@@ -1023,6 +1094,32 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                 indeterminate
               />
             )}
+            {dubBusy && (
+              <div className="ai-step-actions">
+                <button
+                  className="ai-step-button ai-step-button--ghost"
+                  type="button"
+                  onClick={onCancelDub}
+                >
+                  Cancel dubbing
+                </button>
+              </div>
+            )}
+            {dubBusy && dubProgress !== null && (
+              <AiProgress
+                label={dubStage ?? "Voicing audio"}
+                value={dubProgress}
+                ariaLabel="Dubbing progress"
+              />
+            )}
+            {dubBusy && dubProgress === null && (
+              <AiProgress
+                label={dubStage ?? "Working…"}
+                value={0}
+                ariaLabel={dubStage ?? "Dubbed audio generation"}
+                indeterminate
+              />
+            )}
             {micPreviewError && !micPreviewUrl && !micPreviewLoading && (
               <div className="ai-step-actions">
                 <button
@@ -1036,30 +1133,59 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
             )}
             {subtitlesResults.length > 0 && (
               <ul className="ai-srt-list">
-                {subtitlesResults.map((result) => (
-                  <li key={result.code} className="ai-highlight">
-                    <div className="ai-highlight-head">
-                      <strong>{AUDIO_LANGUAGES.find((language) => language.code === result.code)?.label ?? result.name}</strong>
-                      <span className={`ai-step-pill ${result.srtPath ? "ai-step-pill--done" : result.error ? "ai-step-pill--error" : "ai-step-pill--active"}`}>
-                        {result.srtPath ? "Saved" : result.error ? "Failed" : "Working…"}
-                      </span>
-                    </div>
-                    {result.srtPath ? (
-                      <p className="export-progress-path ai-step-path">
-                        <span>Saved to</span>
-                        <code>{result.srtPath}</code>
-                      </p>
-                    ) : result.error ? (
-                      <p className="ai-highlight-reason">{result.error}</p>
-                    ) : null}
-                    {micPreviewUrl && (
-                      <AiAudioPlayer
-                        label={`${result.name} audio preview`}
-                        src={micPreviewUrl}
-                      />
-                    )}
-                  </li>
-                ))}
+                {subtitlesResults.map((result) => {
+                  const languageName = AUDIO_LANGUAGES.find((language) => language.code === result.code)?.label ?? result.name;
+                  const dub = dubByCode.get(result.code);
+                  return (
+                    <li key={result.code} className="ai-highlight">
+                      <div className="ai-highlight-head">
+                        <strong>{languageName}</strong>
+                        <span className={`ai-step-pill ${result.srtPath ? "ai-step-pill--done" : result.error ? "ai-step-pill--error" : "ai-step-pill--active"}`}>
+                          {result.srtPath ? "Saved" : result.error ? "Failed" : "Working…"}
+                        </span>
+                      </div>
+                      {result.srtPath ? (
+                        <p className="export-progress-path ai-step-path">
+                          <span>Saved to</span>
+                          <code>{result.srtPath}</code>
+                        </p>
+                      ) : result.error ? (
+                        <p className="ai-highlight-reason">{result.error}</p>
+                      ) : null}
+                      {micPreviewUrl && (
+                        <AiAudioPlayer
+                          label="Original microphone audio"
+                          src={micPreviewUrl}
+                        />
+                      )}
+                      {dub?.wavPath && selectedRecordingId ? (
+                        <DubAudioPlayer
+                          recordingId={selectedRecordingId}
+                          code={result.code}
+                          label={`Dubbed ${languageName} audio`}
+                        />
+                      ) : result.srtPath && !dubBusy && !subtitlesBusy ? (
+                        <div className="ai-step-actions">
+                          <button
+                            className="ai-step-button ai-step-button--ghost"
+                            type="button"
+                            disabled={busy || loading || anyAiTaskBusy}
+                            title={`Voice these subtitles in ${languageName}`}
+                            onClick={() => void onStartDub([{ code: result.code, name: languageName }])}
+                          >
+                            {`Dub in ${languageName}`}
+                          </button>
+                        </div>
+                      ) : null}
+                      {dub?.wavPath && dub.voice && (
+                        <p className="ai-note">Voiced by {dub.voice}; plays in {languageName}.</p>
+                      )}
+                      {dub?.error && (
+                        <p className="ai-highlight-reason">{dub.error}</p>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
             <div className="ai-step-actions">

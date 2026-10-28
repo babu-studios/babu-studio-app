@@ -77,6 +77,13 @@ export type AiDialogProps = {
   subtitlesError: string | null;
   onStartSubtitles: (languages: Array<import("@shared/types/media").AiSubtitleLanguage>) => Promise<void>;
   onCancelSubtitles: () => void;
+  dubBusy: boolean;
+  dubStage: string | null;
+  dubProgress: number | null;
+  dubResults: Array<import("@shared/types/media").AiDubResult>;
+  dubError: string | null;
+  onStartDub: (languages: Array<import("@shared/types/media").AiSubtitleLanguage>) => Promise<void>;
+  onCancelDub: () => void;
 };
 
 export type ExportProgressProps = {
