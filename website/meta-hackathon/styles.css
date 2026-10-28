@@ -147,6 +147,11 @@ a { color: var(--green); }
 .dl-card .btn { margin-top: 0.6rem; }
 .dl-alt { margin-top: 1.2rem; }
 
+/* Screenshot */
+.shot { margin: 2.2rem 0 0; }
+.shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.shot figcaption { margin-top: 0.6rem; font-size: 0.85rem; color: var(--ink-faint); }
+
 footer { border-top: 1px solid var(--line); padding: 2rem; text-align: center; }
 footer p { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--ink-faint); }
 
