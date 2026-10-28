@@ -100,6 +100,9 @@ jobs:
             dist/*
             clamav-scan.log
           generate_release_notes: true
+          # Beta tags (e.g. v0.1.1-beta.1) stay pre-releases so they never
+          # become the repo's latest release.
+          prerelease: ${{ contains(github.ref_name, 'beta') }}
 
       # Optional: runs only when the VT_API_KEY repository secret exists.
       - name: Submit installers to VirusTotal
