@@ -12,7 +12,7 @@ const STEPS: Array<{ id: AiStepId; label: string }> = [
   { id: "clip", label: "AI clip" },
   { id: "highlights", label: "Highlights" },
   { id: "micwav", label: "Mic WAV" },
-  { id: "audio", label: "Audio" },
+  { id: "audio", label: "Subtitles" },
 ];
 
 const AUDIO_LANGUAGES = [
@@ -280,6 +280,9 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
     onErrorToast,
     exportingIndex,
     exportingAll,
+    exportProgress,
+    exportCurrent,
+    exportTotal,
     keyConfigured,
     keySource,
     keyBusy,
@@ -317,7 +320,7 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
   const [activeStep, setActiveStep] = useState<AiStepId>("setup");
   const [keyInput, setKeyInput] = useState("");
   const [keyEditing, setKeyEditing] = useState(false);
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["en"]);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -858,6 +861,13 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                             {exportingIndex === index ? "Exporting…" : clip.exportPath ? "Re-export clip" : "Export clip"}
                           </button>
                         </div>
+                        {exportingIndex === index && (
+                          <AiProgress
+                            label={`Exporting clip… ${exportProgress ?? 0}%`}
+                            value={exportProgress ?? 0}
+                            ariaLabel="Highlight clip export progress"
+                          />
+                        )}
                         {clip.exportPath && (
                           <p className="export-progress-path ai-step-path">
                             <span>Saved to</span>
@@ -878,6 +888,13 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                     {exportingAll ? "Exporting all…" : "Export all highlights"}
                   </button>
                 </div>
+                {exportingAll && (
+                  <AiProgress
+                    label={exportTotal > 0 ? `Exporting clip ${Math.max(1, exportCurrent)} of ${exportTotal}… ${exportProgress ?? 0}%` : "Exporting highlights…"}
+                    value={exportProgress ?? 0}
+                    ariaLabel="All highlights export progress"
+                  />
+                )}
               </div>
             )}
           </div>
@@ -958,7 +975,7 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
         )}
 
         {activeStep === "audio" && (
-          <div className="ai-step" aria-label="Step 5: multi-language audio">
+          <div className="ai-step" aria-label="Step 5: multi-language subtitles">
             <div className="ai-step-head">
               <span className="ai-step-number" aria-hidden="true">5</span>
               <div className="ai-step-copy">
@@ -1052,12 +1069,6 @@ export function AiDialog({ dialog }: { dialog: AiDialogProps }) {
                     ) : result.error ? (
                       <p className="ai-highlight-reason">{result.error}</p>
                     ) : null}
-                    {micPreviewUrl && (
-                      <AiAudioPlayer
-                        label={`${result.name} audio preview`}
-                        src={micPreviewUrl}
-                      />
-                    )}
                   </li>
                 ))}
               </ul>

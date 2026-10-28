@@ -25,6 +25,9 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
   const [highlightsTimeError, setHighlightsTimeError] = useState<string | null>(null);
   const [exportingIndex, setExportingIndex] = useState<number | null>(null);
   const [exportingAll, setExportingAll] = useState(false);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [exportCurrent, setExportCurrent] = useState(0);
+  const [exportTotal, setExportTotal] = useState(0);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [keyStatus, setKeyStatus] = useState<AiKeyStatus | null>(null);
   const [keyBusy, setKeyBusy] = useState(false);
@@ -41,6 +44,9 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
     setHighlightsTimeError(null);
     setExportingIndex(null);
     setExportingAll(false);
+    setExportProgress(null);
+    setExportCurrent(0);
+    setExportTotal(0);
     setPreviewIndex(null);
   }, [selectedRecordingId]);
 
@@ -198,12 +204,47 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
     }));
   }
 
+  // While an export runs the main process reports real FFmpeg percent per
+  // clip; poll it here so the row shows a live bar instead of a dead label.
+  const exportActive = exportingIndex !== null || exportingAll;
+  useEffect(() => {
+    if (!exportActive) {
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      window.babuStudio.getRecordingStatus().then((status) => {
+        if (cancelled) {
+          return;
+        }
+        const exporting = status.aiHighlightExport;
+        if (!exporting) {
+          return;
+        }
+        if (typeof exporting.progress === "number") {
+          setExportProgress(exporting.progress);
+        } else {
+          setExportProgress(null);
+        }
+        setExportCurrent(exporting.current);
+        setExportTotal(exporting.total);
+      }).catch(() => {});
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [exportActive]);
+
   async function exportHighlightClip(index: number): Promise<void> {
     const clip = highlightsClips[index];
     if (recordingBusy || exportingIndex !== null || exportingAll || !clip || !selectedRecordingId) {
       return;
     }
     setExportingIndex(index);
+    setExportProgress(0);
+    setExportCurrent(1);
+    setExportTotal(1);
     setHighlightsError(null);
     try {
       const result = await window.babuStudio.exportHighlightClip({
@@ -220,6 +261,7 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
       setHighlightsError(error instanceof Error ? error.message : "Unable to export the highlight.");
     } finally {
       setExportingIndex(null);
+      setExportProgress(null);
     }
   }
 
@@ -228,6 +270,9 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
       return;
     }
     setExportingAll(true);
+    setExportProgress(0);
+    setExportCurrent(0);
+    setExportTotal(highlightsClips.length);
     setHighlightsError(null);
     try {
       const result = await window.babuStudio.exportAllHighlights({
@@ -242,6 +287,7 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
       setHighlightsError(error instanceof Error ? error.message : "Unable to export the highlights.");
     } finally {
       setExportingAll(false);
+      setExportProgress(null);
     }
   }
 
@@ -256,6 +302,9 @@ export function useAiHighlights(selectedRecordingId: string, recordingBusy: bool
     highlightsTimeError,
     exportingIndex,
     exportingAll,
+    exportProgress,
+    exportCurrent,
+    exportTotal,
     previewIndex,
     setPreviewIndex,
     keyStatus,

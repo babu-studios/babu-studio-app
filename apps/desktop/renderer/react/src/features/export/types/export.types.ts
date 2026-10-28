@@ -50,6 +50,9 @@ export type AiDialogProps = {
   onErrorToast: (text: string) => void;
   exportingIndex: number | null;
   exportingAll: boolean;
+  exportProgress: number | null;
+  exportCurrent: number;
+  exportTotal: number;
   keyConfigured: boolean;
   keySource: AiKeySource | null;
   keyBusy: boolean;

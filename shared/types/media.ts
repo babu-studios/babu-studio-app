@@ -203,6 +203,16 @@ export type HighlightClipExportResult = {
   error: string | null;
 };
 
+export type AiHighlightExportStatus = {
+  state: "IDLE" | "WORKING" | "COMPLETED" | "ERROR";
+  /** Real FFmpeg percent for the clip being cut; null between clips. */
+  progress: number | null;
+  /** 1-based index of the clip being cut in the current run. */
+  current: number;
+  /** Clips in the current run (1 for a single export). */
+  total: number;
+};
+
 export type AiSubtitleLanguage = {
   code: string;
   name: string;
@@ -267,6 +277,7 @@ export type RecordingResult = {
   aiShortClip?: AiPreviewStatus;
   aiHighlights?: AiHighlightsStatus;
   aiSubtitles?: AiSubtitlesStatus;
+  aiHighlightExport?: AiHighlightExportStatus;
 };
 
 export type RecordingSummary = {

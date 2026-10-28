@@ -11,6 +11,7 @@ import type {
   AiArtifactsRequest,
   AiArtifactsResult,
   AiHighlightSuggestion,
+  AiHighlightExportStatus,
   AiHighlightsStatus,
   AiPreviewResult,
   AiPreviewStatus,
@@ -363,6 +364,12 @@ export class RecordingService {
   private aiShortClipProcess?: FfmpegProcess;
   private aiShortClipCancelled = false;
   private highlightExportInFlight = false;
+  private highlightExportState: AiHighlightExportStatus = {
+    state: "IDLE",
+    progress: null,
+    current: 0,
+    total: 0,
+  };
   private aiHighlightsState: AiHighlightsStatus = {
     state: "IDLE",
     stage: null,
@@ -1634,10 +1641,19 @@ export class RecordingService {
       clips.durationSeconds,
     );
     this.highlightExportInFlight = true;
+    this.highlightExportState = { state: "WORKING", progress: 0, current: 1, total: 1 };
     try {
-      const path = await this.cutHighlightClip(clips, clip, index as number);
+      const path = await this.cutHighlightClip(clips, clip, index as number, (progress) => {
+        if (this.highlightExportInFlight) {
+          this.highlightExportState = { state: "WORKING", progress, current: 1, total: 1 };
+        }
+      });
       await this.markHighlightExported(clips.directory, index as number, path);
+      this.highlightExportState = { state: "COMPLETED", progress: 100, current: 1, total: 1 };
       return { success: true, paths: [path], error: null };
+    } catch (error) {
+      this.highlightExportState = { state: "ERROR", progress: null, current: 1, total: 1 };
+      throw error;
     } finally {
       this.highlightExportInFlight = false;
     }
@@ -1661,19 +1677,36 @@ export class RecordingService {
     const loaded = await this.loadHighlightClips(request?.id);
     const edited = Array.isArray(request?.clips) && request.clips.length > 0 ? request.clips : loaded.clips;
     const durationSeconds = loaded.durationSeconds;
+    const total = edited.length;
     this.highlightExportInFlight = true;
+    this.highlightExportState = { state: "WORKING", progress: 0, current: 0, total };
     try {
       const paths: string[] = [];
       for (let index = 0; index < edited.length; index += 1) {
+        const current = index + 1;
         const clip = this.clampClipToDuration(edited[index], durationSeconds);
-        const path = await this.cutHighlightClip(loaded, clip, index);
+        this.highlightExportState = { state: "WORKING", progress: 0, current, total };
+        const path = await this.cutHighlightClip(loaded, clip, index, (progress) => {
+          if (this.highlightExportInFlight) {
+            this.highlightExportState = {
+              state: "WORKING",
+              progress: Math.round(((index + progress / 100) / Math.max(1, total)) * 100),
+              current,
+              total,
+            };
+          }
+        });
         paths.push(path);
         await this.markHighlightExported(loaded.directory, index, path);
       }
       if (paths.length === 0) {
         throw new Error("There are no highlight suggestions to export.");
       }
+      this.highlightExportState = { state: "COMPLETED", progress: 100, current: total, total };
       return { success: true, paths, error: null };
+    } catch (error) {
+      this.highlightExportState = { state: "ERROR", progress: null, current: 0, total };
+      throw error;
     } finally {
       this.highlightExportInFlight = false;
     }
@@ -1695,13 +1728,14 @@ export class RecordingService {
     loaded: { directory: string; project: ProjectMetadata; source: RecordingResult; scene: RecordingScene },
     clip: AiHighlightSuggestion,
     index: number,
+    onProgress: (progress: number) => void,
   ): Promise<string> {
     const fileName = highlightFileName(index, clip.category);
     const outputPath = join(loaded.directory, "exports", fileName);
     const startSeconds = Math.max(0, clip.startTime);
     const lengthSeconds = Math.max(0.5, clip.endTime - clip.startTime);
     try {
-      await this.renderLayout(loaded.source, "VERTICAL", loaded.scene, outputPath, loaded.project, () => {}, {
+      await this.renderLayout(loaded.source, "VERTICAL", loaded.scene, outputPath, loaded.project, onProgress, {
         scope: "ai-short-clip",
         clipRange: { startSeconds, lengthSeconds },
       });
@@ -1890,6 +1924,7 @@ export class RecordingService {
         ...this.aiSubtitlesState,
         languages: this.aiSubtitlesState.languages.map((language) => ({ ...language })),
       },
+      aiHighlightExport: { ...this.highlightExportState },
     };
   }
 
