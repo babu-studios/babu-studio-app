@@ -1,41 +1,31 @@
 import { app, systemPreferences } from "electron";
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import os from "node:os";
-import { basename, dirname, join } from "node:path";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { powerGuard } from "./power-guard.service";
-import type { Readable } from "node:stream";
 import type {
-  NativeCaptureDevice,
   AiArtifactsRequest,
   AiArtifactsResult,
-  AiHighlightSuggestion,
   AiHighlightsStatus,
   AiPreviewResult,
   AiPreviewStatus,
   ExportAiPreviewRequest,
   ExportAllHighlightsRequest,
   ExportHighlightClipRequest,
+  ExportRecordingRequest,
   FindHighlightsRequest,
   FindHighlightsResult,
-  ExportRecordingRequest,
   HighlightClipExportResult,
   PostProcessingState,
   RecordingExport,
-  RecordingLayer,
   RecordingMode,
   RecordingResult,
   RecordingScene,
-  RecordingSourceFile,
   RecordingSummary,
   StartRecordingRequest,
 } from "@shared/types/media";
 import {
-  HIGHLIGHTS_MODEL_ID,
-  highlightFileName,
   metaHighlightsProvider,
-  parseHighlightSuggestions,
   type HighlightsProvider,
 } from "./ai-highlights.provider";
 import {
@@ -43,248 +33,28 @@ import {
   DEFAULT_NOISE_REDUCTION,
   EXPORT_RESOLUTIONS,
   isNoiseReductionLevel,
-  MAX_AUDIO_GAIN,
 } from "@shared/constants/media.constants";
-import type { NoiseReductionLevel } from "@shared/constants/media.constants";
 import type { MediaCoreService } from "./media-core.service";
-
-const RECORDING_ID_PATTERN = /^recording-[0-9A-Za-z-]+$/;
-
-type FfmpegProcess = ChildProcessByStdio<null, null, Readable>;
-
-const CAPTURE_SIZES = {
-  "360p": { width: 640, height: 360 },
-  "480p": { width: 854, height: 480 },
-  "720p": { width: 1280, height: 720 },
-  "1080p": { width: 1920, height: 1080 },
-  "1440p": { width: 2560, height: 1440 },
-  "2160p": { width: 3840, height: 2160 },
-} as const;
-
-// Noise reduction for the microphone track. The high-pass filter drops rumble and the
-// FFT denoiser removes hiss while leaving the voice band largely untouched.
-const NOISE_REDUCTION_FILTERS: Record<NoiseReductionLevel, string> = {
-  OFF: "",
-  LOW: "highpass=f=80,afftdn=nr=6:nf=-45",
-  MEDIUM: "highpass=f=100,afftdn=nr=12:nf=-35",
-  HIGH: "highpass=f=120,afftdn=nr=18:nf=-30",
-};
-
-type ProjectMetadata = Record<string, unknown> & {
-  status: string;
-  postProcessingStatus: PostProcessingState;
-};
+import { failure, nativeDeviceId } from "./recording/device-match";
+import { runFfmpeg, type FfmpegProcess } from "./recording/ffmpeg-runner";
+import {
+  assertSourcesExist,
+  PROJECT_FILE,
+  projectSources,
+  RECORDING_ID_PATTERN,
+  recordingsRoot,
+  writeProjectFile,
+  type ProjectMetadata,
+} from "./recording/project-store";
+import * as exportRenderer from "./recording/export-renderer";
+import type { PostProcessingHost } from "./recording/export-renderer";
+import * as recordingAi from "./recording/recording-ai";
+import type { AiScope, AiServiceHost } from "./recording/recording-ai";
 
 type RecordingStartOptions = {
   outputDirectory?: string;
   synthetic?: boolean;
 };
-
-function failure(request: StartRecordingRequest, error: string): RecordingResult {
-  return {
-    state: "ERROR",
-    success: false,
-    recordingMode: request.mode,
-    filePath: "",
-    durationMs: 0,
-    fileSizeBytes: 0,
-    droppedVideoFrames: 0,
-    droppedAudioFrames: 0,
-    videoTracks: [],
-    audioTracks: [],
-    error,
-    postProcessingState: "NOT_STARTED",
-    exportPath: null,
-  };
-}
-
-function evenDimension(value: number): number {
-  return Math.max(2, Math.round(value / 2) * 2);
-}
-
-function finite(value: number, fallback = 0): number {
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function normalizeCaptureDeviceName(name: string): string {
-  return name
-    .replace(/^default\s*-\s*/i, "")
-    .replace(/\s+\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, "")
-    .replace(/\s+\(built-in\)$/i, "")
-    .trim()
-    .toLocaleLowerCase();
-}
-
-function nativeDeviceId(
-  selectedName: string,
-  type: NativeCaptureDevice["type"],
-  devices: NativeCaptureDevice[],
-): string {
-  const typedDevices = [...new Map(
-    devices.filter((device) => device.type === type).map((device) => [device.id, device]),
-  ).values()];
-  const hardwareId = /\(([0-9a-f]{4}):([0-9a-f]{4})\)\s*$/i.exec(selectedName.trim());
-  const compactHardwareId = hardwareId ? `${hardwareId[1]}${hardwareId[2]}`.toLocaleLowerCase() : undefined;
-  const hardwareMatches = compactHardwareId
-    ? typedDevices.filter((device) => device.id.toLocaleLowerCase().replace(/[^0-9a-f]/g, "").includes(compactHardwareId))
-    : [];
-  if (hardwareMatches.length === 1) {
-    return hardwareMatches[0].id;
-  }
-
-  const normalizedName = normalizeCaptureDeviceName(selectedName);
-  const nameMatches = typedDevices.filter((device) => normalizeCaptureDeviceName(device.name) === normalizedName);
-  if (nameMatches.length === 1) {
-    return nameMatches[0].id;
-  }
-
-  if (hardwareMatches.length > 1 || nameMatches.length > 1) {
-    throw new Error(`More than one native ${type} device matches "${selectedName}". Choose a uniquely identified input.`);
-  }
-
-  const available = typedDevices.map((device) => device.name).join(", ") || "none";
-  throw new Error(`Selected ${type} device "${selectedName}" is not available to the native recorder. Available ${type} devices: ${available}.`);
-}
-
-function getSourceDimensions(layer: RecordingLayer): { width: number; height: number } {
-  if (layer.sourceDimensions) {
-    return layer.sourceDimensions;
-  }
-  switch (layer.captureResolution) {
-    case "360p": return CAPTURE_SIZES["360p"];
-    case "480p": return CAPTURE_SIZES["480p"];
-    case "720p": return CAPTURE_SIZES["720p"];
-    case "1080p": return CAPTURE_SIZES["1080p"];
-    case "1440p": return CAPTURE_SIZES["1440p"];
-    case "2160p": return CAPTURE_SIZES["2160p"];
-  }
-}
-
-function runFfmpeg(
-  args: string[],
-  onSpawn: (child: FfmpegProcess) => void,
-  onClose: (child: FfmpegProcess) => void,
-  onOutputTime: (microseconds: number) => void,
-): Promise<void> {
-  const ffmpegPath = process.env.BABU_STUDIO_FFMPEG_PATH || "ffmpeg";
-  return new Promise((resolve, reject) => {
-    const releasePowerGuard = powerGuard.acquire();
-    const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
-    onSpawn(child);
-    let stderr = "";
-    let progressRemainder = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr = `${stderr}${chunk}`.slice(-12_000);
-      const lines = `${progressRemainder}${chunk}`.split(/\r?\n/);
-      progressRemainder = lines.pop() ?? "";
-      for (const line of lines) {
-        const separator = line.indexOf("=");
-        if (separator < 0 || line.slice(0, separator) !== "out_time_us") {
-          continue;
-        }
-        const microseconds = Number(line.slice(separator + 1));
-        if (Number.isFinite(microseconds) && microseconds >= 0) {
-          onOutputTime(microseconds);
-        }
-      }
-    });
-    child.once("error", (error) => {
-      releasePowerGuard();
-      reject(error);
-    });
-    child.once("close", (code, signal) => {
-      releasePowerGuard();
-      onClose(child);
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code ?? "unknown"}${signal ? ` (${signal})` : ""}: ${stderr.trim() || "No diagnostic output."}`));
-      }
-    });
-  });
-}
-
-// Custom extensions so the OS has no app to open these internal files.
-const MASTER_FILE = "master.babu";
-const PROJECT_FILE = "project.babu";
-
-// Small vertical render for AI clip suggestions: same scene composition and
-// audio mix as the vertical export, at a fraction of the size.
-const AI_PREVIEW_FILE = "ai-preview.mp4";
-const AI_PREVIEW_WIDTH = 540;
-const AI_PREVIEW_HEIGHT = 960;
-const AI_PREVIEW_FPS = 30;
-
-// Two-step AI shot clip: a forced-360p vertical file for AI ingestion, then a
-// short clip cut from it. Both live in the take's exports directory.
-const AI_SHOT_360P_FILE = "ai-360p.mp4";
-const AI_SHOT_WIDTH = 360;
-const AI_SHOT_HEIGHT = 640;
-const AI_SHOT_FPS = 30;
-const AI_SHORT_CLIP_FILE = "ai-short-clip.mp4";
-const AI_SHORT_CLIP_SECONDS = 30;
-
-// AI highlight suggestions: sidecar analysis file in the take's exports
-// directory. master.babu / project.babu formats are never touched for this.
-const AI_HIGHLIGHTS_FILE = "ai-highlights.json";
-
-// Deterministic short-clip window: up to AI_SHORT_CLIP_SECONDS taken from the
-// middle of the take so short takes still produce a whole-take clip.
-function aiShortClipWindow(durationMs: number): { startSeconds: number; lengthSeconds: number } {
-  const totalSeconds = Math.max(0.1, durationMs / 1000);
-  const lengthSeconds = Math.min(AI_SHORT_CLIP_SECONDS, totalSeconds);
-  const startSeconds = Math.max(0, (totalSeconds - lengthSeconds) / 2);
-  return { startSeconds, lengthSeconds };
-}
-
-type ProjectSourceFile = {
-  name: string;
-  kind: "video" | "audio";
-  file: string;
-};
-
-function isProjectSourceFile(value: unknown): value is ProjectSourceFile {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const entry = value as Record<string, unknown>;
-  return typeof entry.name === "string"
-    && (entry.kind === "video" || entry.kind === "audio")
-    && typeof entry.file === "string"
-    && entry.file.length > 0
-    && !entry.file.includes("/")
-    && !entry.file.includes("\\");
-}
-
-// Recorded source files for a take with absolute paths, or null for takes
-// recorded before per-source files (a single master.babu).
-function projectSources(project: ProjectMetadata, directory: string): RecordingSourceFile[] | null {
-  const sources = project.sources as { files?: unknown } | undefined;
-  if (!sources || !Array.isArray(sources.files)) {
-    return null;
-  }
-  return sources.files
-    .filter(isProjectSourceFile)
-    .map((entry) => ({ name: entry.name, kind: entry.kind, path: join(directory, entry.file) }));
-}
-
-function resultSourceFiles(result: RecordingResult): RecordingSourceFile[] | null {
-  return Array.isArray(result.sourceFiles) && result.sourceFiles.length > 0 ? result.sourceFiles : null;
-}
-
-async function assertSourcesExist(sources: RecordingSourceFile[] | null, directory: string): Promise<void> {
-  if (sources) {
-    if (sources.length === 0) {
-      throw new Error("The selected recording lists no source files.");
-    }
-    for (const source of sources) {
-      await stat(source.path);
-    }
-    return;
-  }
-  await stat(join(directory, MASTER_FILE));
-}
 
 export class RecordingService {
   private projectFile?: string;
@@ -353,6 +123,107 @@ export class RecordingService {
       this.releaseRecordingPowerGuard?.();
       this.releaseRecordingPowerGuard = undefined;
     }
+  }
+
+  private exportHost(): PostProcessingHost {
+    return {
+      projectDirectory: this.projectDirectory,
+      isScopeCancelled: (scope) => this.isScopeCancelled(scope),
+      runFfmpegTracked: (args, durationSeconds, onProgress, scope) => this.runFfmpegTracked(args, durationSeconds, onProgress, scope),
+      getProjectMetadata: () => this.projectMetadata,
+      getSelectedExportModes: () => this.selectedExportModes,
+      getExportStates: () => this.exportStates,
+      setExportStates: (states) => { this.exportStates = states; },
+      getExportPaths: () => this.exportPaths,
+      setExportPaths: (paths) => { this.exportPaths = paths; },
+      getExportPath: () => this.exportPath,
+      setExportPath: (path) => { this.exportPath = path; },
+      getActiveExportPath: () => this.activeExportPath,
+      setActiveExportPath: (path) => { this.activeExportPath = path; },
+      isPostProcessingCancelled: () => this.postProcessingCancelled,
+      setPostProcessingCancelled: (value) => { this.postProcessingCancelled = value; },
+      setPostProcessingPromise: (promise) => { this.postProcessingPromise = promise; },
+      getPostProcessingState: () => this.postProcessingState,
+      setPostProcessingState: (state) => { this.postProcessingState = state; },
+      getPostProcessingError: () => this.postProcessingError,
+      setPostProcessingError: (error) => { this.postProcessingError = error; },
+      saveProject: () => writeProjectFile(this.projectFile, this.projectMetadata),
+      mergePostProcessing: (result) => this.withPostProcessing(result),
+    };
+  }
+
+  private aiHost(): AiServiceHost {
+    return {
+      isRecordingActive: () => this.active,
+      hasPendingStart: () => this.startPromise !== undefined,
+      isExportProcessing: () => this.postProcessingState === "PROCESSING",
+      hasPendingRetry: () => this.retryPromise !== undefined,
+      tryBeginHighlightExport: () => {
+        if (this.highlightExportInFlight) {
+          return false;
+        }
+        this.highlightExportInFlight = true;
+        return true;
+      },
+      endHighlightExport: () => { this.highlightExportInFlight = false; },
+      assertNoHighlightExport: (action: string) => this.assertNoHighlightExport(action),
+      getAiScopeState: (scope: AiScope) => scope === "ai-preview" ? this.aiPreviewState : scope === "ai-shot" ? this.aiShotExportState : this.aiShortClipState,
+      setAiScopeState: (scope: AiScope, state: AiPreviewStatus) => {
+        if (scope === "ai-preview") {
+          this.aiPreviewState = state;
+        } else if (scope === "ai-shot") {
+          this.aiShotExportState = state;
+        } else {
+          this.aiShortClipState = state;
+        }
+      },
+      isAiScopeCancelled: (scope: AiScope) => scope === "ai-preview" ? this.aiPreviewCancelled : scope === "ai-shot" ? this.aiShotExportCancelled : this.aiShortClipCancelled,
+      setAiScopeCancelled: (scope: AiScope, value: boolean) => {
+        if (scope === "ai-preview") {
+          this.aiPreviewCancelled = value;
+        } else if (scope === "ai-shot") {
+          this.aiShotExportCancelled = value;
+        } else {
+          this.aiShortClipCancelled = value;
+        }
+      },
+      getAiHighlightsState: () => this.aiHighlightsState,
+      setAiHighlightsState: (state) => { this.aiHighlightsState = state; },
+      setAiHighlightsRecordingId: (id) => { this.aiHighlightsRecordingId = id; },
+      createHighlightsAbort: () => {
+        const abort = new AbortController();
+        this.aiHighlightsAbort = abort;
+        return abort;
+      },
+      clearHighlightsAbort: (abort) => {
+        if (this.aiHighlightsAbort === abort) {
+          this.aiHighlightsAbort = undefined;
+        }
+      },
+      getHighlightsProvider: () => this.highlightsProvider,
+      getRecordingsRoot: () => recordingsRoot(),
+      setProjectContext: (directory, project, source) => {
+        this.projectDirectory = directory;
+        this.projectFile = join(directory, PROJECT_FILE);
+        this.projectMetadata = project;
+        this.finalizedResult = source;
+      },
+      renderLayout: (result, mode, scene, exportPath, project, onProgress, options) => exportRenderer.renderLayout(
+        {
+          projectDirectory: this.projectDirectory,
+          isScopeCancelled: (scope) => this.isScopeCancelled(scope),
+          runFfmpegTracked: (args, durationSeconds, progress, scope) => this.runFfmpegTracked(args, durationSeconds, progress, scope),
+        },
+        result,
+        mode,
+        scene,
+        exportPath,
+        project,
+        onProgress,
+        options,
+      ),
+      runAiShortClipFfmpeg: (args, durationSeconds, onProgress) => this.runFfmpegTracked(args, durationSeconds, onProgress, "ai-short-clip"),
+    };
   }
 
   async start(request: StartRecordingRequest): Promise<RecordingResult> {
@@ -429,7 +300,7 @@ export class RecordingService {
     if (!stopped.success) {
       throw new Error(stopped.error || "Synthetic recording could not be finalized.");
     }
-    await this.startExport(stopped);
+    await exportRenderer.startExport(this.exportHost(), stopped);
     if (this.postProcessingPromise) {
       await this.postProcessingPromise;
     }
@@ -558,7 +429,7 @@ export class RecordingService {
         exports: [],
       };
       this.projectMetadata = projectMetadata;
-      await this.writeProject();
+      await writeProjectFile(this.projectFile, this.projectMetadata);
 
       let nativeRequest = request;
       if (!options.synthetic && process.platform === "darwin") {
@@ -578,12 +449,12 @@ export class RecordingService {
         this.active = false;
         projectMetadata.status = "ERROR";
         projectMetadata.error = result.error;
-        await this.writeProject();
+        await writeProjectFile(this.projectFile, this.projectMetadata);
       } else {
         coreStarted = true;
         projectMetadata.status = "RECORDING";
         projectMetadata.startedAt = new Date().toISOString();
-        await this.writeProject();
+        await writeProjectFile(this.projectFile, this.projectMetadata);
       }
       return this.withPostProcessing(result);
     } catch (error) {
@@ -601,7 +472,7 @@ export class RecordingService {
       if (this.projectMetadata) {
         this.projectMetadata.status = "ERROR";
         this.projectMetadata.error = error instanceof Error ? error.message : String(error);
-        await this.writeProject();
+        await writeProjectFile(this.projectFile, this.projectMetadata);
       }
       throw error;
     }
@@ -676,7 +547,7 @@ export class RecordingService {
 
     if (!result.success) {
       this.projectMetadata.error = result.error;
-      await this.writeProject();
+      await writeProjectFile(this.projectFile, this.projectMetadata);
       return this.withPostProcessing({ ...result, postProcessingState: "NOT_STARTED", exportPath: null });
     }
 
@@ -687,7 +558,7 @@ export class RecordingService {
     this.exportPath = null;
     this.projectMetadata.postProcessingStatus = this.postProcessingState;
     try {
-      await this.writeProject();
+      await writeProjectFile(this.projectFile, this.projectMetadata);
     } catch (error) {
       return this.withPostProcessing({
         ...result,
@@ -700,7 +571,7 @@ export class RecordingService {
   }
 
   async listRecordings(): Promise<RecordingSummary[]> {
-    const root = this.recordingsRoot();
+    const root = recordingsRoot();
     const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
     const summaries: RecordingSummary[] = [];
     for (const entry of entries) {
@@ -749,7 +620,7 @@ export class RecordingService {
     if (!(request.exportResolution in EXPORT_RESOLUTIONS)) {
       throw new Error("Select a valid export resolution.");
     }
-    const directory = join(this.recordingsRoot(), request.id);
+    const directory = join(recordingsRoot(), request.id);
     let project: ProjectMetadata;
     try {
       project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
@@ -777,78 +648,11 @@ export class RecordingService {
     this.finalizedResult = source;
     this.stopResult = undefined;
     this.selectedExportModes = exportModes;
-    return this.startExport(source);
+    return exportRenderer.startExport(this.exportHost(), source);
   }
 
-  // Render a small vertical preview of a saved take for AI clip suggestions.
-  // It mirrors the vertical scene at low quality and never touches the
-  // regular layout export state.
   async exportAiPreview(request: ExportAiPreviewRequest): Promise<AiPreviewResult> {
-    if (this.active || this.startPromise) {
-      throw new Error("Stop the current recording before rendering the AI preview.");
-    }
-    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
-      throw new Error("Wait for the selected layout exports to finish before rendering the AI preview.");
-    }
-    if (this.aiPreviewState.state === "PROCESSING") {
-      throw new Error("The AI preview is already rendering.");
-    }
-    if (this.aiShotExportState.state === "PROCESSING" || this.aiShortClipState.state === "PROCESSING") {
-      throw new Error("Wait for the AI shot-clip task to finish before rendering the AI preview.");
-    }
-    this.assertNoHighlightExport("rendering the AI preview.");
-    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
-      throw new Error("Select a valid recording for the AI preview.");
-    }
-    const directory = join(this.recordingsRoot(), request.id);
-    let project: ProjectMetadata;
-    try {
-      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
-      await assertSourcesExist(projectSources(project, directory), directory);
-    } catch {
-      throw new Error("The selected recording's source files could not be found.");
-    }
-    const source = project.recordingResult as RecordingResult | undefined;
-    if (!source?.success) {
-      throw new Error("The selected recording has no finalized source to preview.");
-    }
-    const scene = project.scene as RecordingScene | undefined;
-    if (!scene) {
-      throw new Error("The shared scene configuration was not saved with this recording.");
-    }
-    this.projectDirectory = directory;
-    this.projectFile = join(directory, PROJECT_FILE);
-    this.projectMetadata = project;
-    this.finalizedResult = source;
-    const previewPath = join(directory, "exports", AI_PREVIEW_FILE);
-    this.aiPreviewCancelled = false;
-    this.aiPreviewState = { state: "PROCESSING", progress: 0, path: previewPath };
-    try {
-      await mkdir(join(directory, "exports"), { recursive: true });
-      await this.renderLayout(
-        source,
-        "VERTICAL",
-        scene,
-        previewPath,
-        project,
-        (progress) => {
-          this.aiPreviewState = { ...this.aiPreviewState, progress };
-        },
-        { previewQuality: true },
-      );
-      if (this.aiPreviewCancelled) {
-        throw new Error("AI preview cancelled");
-      }
-      this.aiPreviewState = { state: "COMPLETED", progress: 100, path: previewPath };
-      return { success: true, path: previewPath, error: null };
-    } catch (error) {
-      await rm(previewPath, { force: true }).catch((cleanupError: unknown) => {
-        console.error("Unable to remove incomplete AI preview:", cleanupError);
-      });
-      const message = error instanceof Error ? error.message : String(error);
-      this.aiPreviewState = { state: "ERROR", progress: 0, path: null, error: message };
-      return { success: false, path: null, error: message };
-    }
+    return recordingAi.exportAiPreview(this.aiHost(), request);
   }
 
   cancelAiPreview(): void {
@@ -860,82 +664,8 @@ export class RecordingService {
     }
   }
 
-  // Step 1 of the AI shot clip: a forced-360p vertical render of a saved take,
-  // regardless of the export-quality dropdown. Never touches the regular
-  // layout export state.
   async exportAiShotClip(request: ExportAiPreviewRequest): Promise<AiPreviewResult> {
-    if (this.active || this.startPromise) {
-      throw new Error("Stop the current recording before exporting the AI 360p file.");
-    }
-    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
-      throw new Error("Wait for the selected layout exports to finish before exporting the AI 360p file.");
-    }
-    if (this.aiPreviewState.state === "PROCESSING") {
-      throw new Error("Wait for the AI preview to finish before exporting the AI 360p file.");
-    }
-    if (this.aiShotExportState.state === "PROCESSING") {
-      throw new Error("The AI 360p export is already running.");
-    }
-    if (this.aiShortClipState.state === "PROCESSING") {
-      throw new Error("Wait for the AI short clip to finish before exporting the AI 360p file.");
-    }
-    this.assertNoHighlightExport("exporting the AI 360p file.");
-    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
-      throw new Error("Select a valid recording for the AI 360p export.");
-    }
-    const directory = join(this.recordingsRoot(), request.id);
-    let project: ProjectMetadata;
-    try {
-      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
-      await assertSourcesExist(projectSources(project, directory), directory);
-    } catch {
-      throw new Error("The selected recording's source files could not be found.");
-    }
-    const source = project.recordingResult as RecordingResult | undefined;
-    if (!source?.success) {
-      throw new Error("The selected recording has no finalized source to export.");
-    }
-    const scene = project.scene as RecordingScene | undefined;
-    if (!scene) {
-      throw new Error("The shared scene configuration was not saved with this recording.");
-    }
-    this.projectDirectory = directory;
-    this.projectFile = join(directory, PROJECT_FILE);
-    this.projectMetadata = project;
-    this.finalizedResult = source;
-    const shotPath = join(directory, "exports", AI_SHOT_360P_FILE);
-    this.aiShotExportCancelled = false;
-    this.aiShotExportState = { state: "PROCESSING", progress: 0, path: shotPath };
-    try {
-      await mkdir(join(directory, "exports"), { recursive: true });
-      await this.renderLayout(
-        source,
-        "VERTICAL",
-        scene,
-        shotPath,
-        project,
-        (progress) => {
-          this.aiShotExportState = { ...this.aiShotExportState, progress };
-        },
-        {
-          previewQuality: true,
-          forcedCanvas: { width: AI_SHOT_WIDTH, height: AI_SHOT_HEIGHT },
-          scope: "ai-shot",
-        },
-      );
-      if (this.aiShotExportCancelled) {
-        throw new Error("AI 360p export cancelled");
-      }
-      this.aiShotExportState = { state: "COMPLETED", progress: 100, path: shotPath };
-      return { success: true, path: shotPath, error: null };
-    } catch (error) {
-      await rm(shotPath, { force: true }).catch((cleanupError: unknown) => {
-        console.error("Unable to remove incomplete AI 360p export:", cleanupError);
-      });
-      const message = this.aiShotExportCancelled ? "AI 360p export cancelled" : error instanceof Error ? error.message : String(error);
-      this.aiShotExportState = { state: "ERROR", progress: 0, path: null, error: message };
-      return { success: false, path: null, error: message };
-    }
+    return recordingAi.exportAiShotClip(this.aiHost(), request);
   }
 
   cancelAiShotClipExport(): void {
@@ -947,104 +677,8 @@ export class RecordingService {
     }
   }
 
-  // Step 2 of the AI shot clip: cut a short clip from the take's AI 360p file.
-  // Requires step 1 so there is always a 360p source to cut from.
   async generateAiShortClip(request: ExportAiPreviewRequest): Promise<AiPreviewResult> {
-    if (this.active || this.startPromise) {
-      throw new Error("Stop the current recording before generating the AI short clip.");
-    }
-    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
-      throw new Error("Wait for the selected layout exports to finish before generating the AI short clip.");
-    }
-    if (this.aiPreviewState.state === "PROCESSING") {
-      throw new Error("Wait for the AI preview to finish before generating the AI short clip.");
-    }
-    if (this.aiShotExportState.state === "PROCESSING") {
-      throw new Error("Wait for the AI 360p export to finish before generating the AI short clip.");
-    }
-    if (this.aiShortClipState.state === "PROCESSING") {
-      throw new Error("The AI short clip is already generating.");
-    }
-    this.assertNoHighlightExport("generating the AI short clip.");
-    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
-      throw new Error("Select a valid recording for the AI short clip.");
-    }
-    const directory = join(this.recordingsRoot(), request.id);
-    let project: ProjectMetadata;
-    try {
-      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
-      await assertSourcesExist(projectSources(project, directory), directory);
-    } catch {
-      throw new Error("The selected recording's source files could not be found.");
-    }
-    const source = project.recordingResult as RecordingResult | undefined;
-    if (!source?.success) {
-      throw new Error("The selected recording has no finalized source for the AI short clip.");
-    }
-    const shotPath = join(directory, "exports", AI_SHOT_360P_FILE);
-    try {
-      await stat(shotPath);
-    } catch {
-      throw new Error("Export the AI 360p file first, then generate the short clip.");
-    }
-    const clipPath = join(directory, "exports", AI_SHORT_CLIP_FILE);
-    const { startSeconds, lengthSeconds } = aiShortClipWindow(source.durationMs);
-    this.aiShortClipCancelled = false;
-    this.aiShortClipState = { state: "PROCESSING", progress: 0, path: clipPath };
-    const onProgress = (progress: number): void => {
-      this.aiShortClipState = { ...this.aiShortClipState, progress };
-    };
-    const buildArgs = (videoCodec: string, extraCodecArgs: string[]): string[] => [
-      "-hide_banner",
-      "-loglevel", "error",
-      "-progress", "pipe:2",
-      "-nostats",
-      "-y",
-      "-ss", startSeconds.toFixed(3),
-      "-t", lengthSeconds.toFixed(3),
-      "-i", shotPath,
-      "-r", String(AI_SHOT_FPS),
-      "-c:v", videoCodec,
-      ...extraCodecArgs,
-      "-c:a", "aac",
-      "-b:a", "128k",
-      "-movflags", "+faststart",
-      clipPath,
-    ];
-    try {
-      try {
-        await this.runFfmpegTracked(
-          buildArgs("h264_videotoolbox", ["-allow_sw", "1", "-b:v", "1.5M", "-profile:v", "high"]),
-          lengthSeconds,
-          onProgress,
-          "ai-short-clip",
-        );
-      } catch {
-        await rm(clipPath, { force: true });
-        if (this.aiShortClipCancelled) {
-          throw new Error("AI short clip cancelled");
-        }
-        onProgress(0);
-        await this.runFfmpegTracked(
-          buildArgs("libx264", ["-preset", "veryfast", "-crf", "28"]),
-          lengthSeconds,
-          onProgress,
-          "ai-short-clip",
-        );
-      }
-      if (this.aiShortClipCancelled) {
-        throw new Error("AI short clip cancelled");
-      }
-      this.aiShortClipState = { state: "COMPLETED", progress: 100, path: clipPath };
-      return { success: true, path: clipPath, error: null };
-    } catch (error) {
-      await rm(clipPath, { force: true }).catch((cleanupError: unknown) => {
-        console.error("Unable to remove incomplete AI short clip:", cleanupError);
-      });
-      const message = this.aiShortClipCancelled ? "AI short clip cancelled" : error instanceof Error ? error.message : String(error);
-      this.aiShortClipState = { state: "ERROR", progress: 0, path: null, error: message };
-      return { success: false, path: null, error: message };
-    }
+    return recordingAi.generateAiShortClip(this.aiHost(), request);
   }
 
   cancelAiShortClip(): void {
@@ -1056,118 +690,8 @@ export class RecordingService {
     }
   }
 
-  private async listShotFiles(directory: string): Promise<string[]> {
-    let entries: string[];
-    try {
-      entries = await readdir(join(directory, "exports"));
-    } catch {
-      return [];
-    }
-    const clips = entries.filter((name) => name.toLowerCase().endsWith(".mp4")).sort();
-    clips.sort((a, b) => {
-      if (a === AI_SHOT_360P_FILE) {
-        return -1;
-      }
-      if (b === AI_SHOT_360P_FILE) {
-        return 1;
-      }
-      return a.localeCompare(b);
-    });
-    return clips;
-  }
-
-  // Resolve which generated file feeds AI analysis/export. Only basenames
-  // inside the take's own exports dir are accepted — never absolute paths.
-  private async resolveAiSourceFile(directory: string, requested?: unknown): Promise<{ file: string; path: string }> {
-    const available = await this.listShotFiles(directory);
-    if (available.length === 0) {
-      throw new Error("Generate the AI 360p file first, then find highlights.");
-    }
-    const name = typeof requested === "string" ? requested : "";
-    const file = name.length > 0 ? name : AI_SHOT_360P_FILE;
-    if (!/^[A-Za-z0-9][A-Za-z0-9 _\-.]*\.mp4$/i.test(file) || !available.includes(file)) {
-      throw new Error("Select a generated clip from this recording's exports folder.");
-    }
-    const full = join(directory, "exports", file);
-    try {
-      await stat(full);
-    } catch {
-      throw new Error("The selected clip file could not be found. Generate it again.");
-    }
-    return { file, path: full };
-  }
-
-  // File management for AI artifacts: report what already exists on disk so
-  // the UI restores Done state instead of forcing a re-export. Never throws
-  // for a missing take — absent files simply read as null.
   async getAiArtifacts(request: AiArtifactsRequest): Promise<AiArtifactsResult> {
-    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
-      throw new Error("Select a valid recording.");
-    }
-    const directory = join(this.recordingsRoot(), request.id);
-    const existingFile = async (file: string): Promise<string | null> => {
-      const full = join(directory, "exports", file);
-      try {
-        await stat(full);
-        return full;
-      } catch {
-        return null;
-      }
-    };
-    const shotPath = await existingFile(AI_SHOT_360P_FILE);
-    const shortClipPath = await existingFile(AI_SHORT_CLIP_FILE);
-    const shotFiles = await this.listShotFiles(directory);
-    let highlights: AiArtifactsResult["highlights"] = null;
-    try {
-      const sidecar = JSON.parse(
-        await readFile(join(directory, "exports", AI_HIGHLIGHTS_FILE), "utf8"),
-      ) as {
-        model?: unknown;
-        analyzedAt?: unknown;
-        durationSeconds?: unknown;
-        clips?: unknown;
-        exports?: unknown;
-      };
-      const durationSeconds = Number(sidecar.durationSeconds);
-      const clips = parseHighlightSuggestions(
-        Array.isArray(sidecar.clips) ? sidecar.clips : [],
-        durationSeconds,
-        typeof sidecar.model === "string" ? sidecar.model : HIGHLIGHTS_MODEL_ID,
-      );
-      if (clips.length > 0) {
-        const exportStates = Array.isArray(sidecar.exports) ? sidecar.exports : [];
-        const withPaths = await Promise.all(clips.map(async (clip, index) => {
-          const saved = (exportStates[index] as { path?: unknown } | undefined)?.path;
-          let exportPath: string | null = null;
-          if (typeof saved === "string" && saved.length > 0) {
-            // Sidecar stores an absolute path; also accept the bare filename
-            // in case the library moved between machines.
-            const leaf = saved.split("/").pop() ?? saved;
-            exportPath = (await existingFile(leaf.includes(".mp4") ? leaf : saved)) ?? null;
-            if (!exportPath) {
-              try {
-                await stat(saved);
-                exportPath = saved;
-              } catch {
-                exportPath = null;
-              }
-            }
-          }
-          if (!exportPath) {
-            exportPath = await existingFile(highlightFileName(index, clip.category));
-          }
-          return { ...clip, exportPath };
-        }));
-        highlights = {
-          model: typeof sidecar.model === "string" ? sidecar.model : null,
-          analyzedAt: typeof sidecar.analyzedAt === "string" ? sidecar.analyzedAt : null,
-          clips: withPaths,
-        };
-      }
-    } catch {
-      highlights = null;
-    }
-    return { shotPath, shortClipPath, shotFiles, highlights };
+    return recordingAi.getAiArtifacts(this.aiHost(), request);
   }
 
   /** Test seam: substitute the network provider without touching callers. */
@@ -1175,104 +699,8 @@ export class RecordingService {
     this.highlightsProvider = provider;
   }
 
-  // Find highlight moments in the take's ai-360p.mp4 via the Meta
-  // video-analysis provider. Progress stays honest: stage labels while the
-  // model call is opaque (indeterminate, progress null); 100 only on success.
   async findHighlights(request: FindHighlightsRequest): Promise<FindHighlightsResult> {
-    if (this.active || this.startPromise) {
-      throw new Error("Stop the current recording before finding highlights.");
-    }
-    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
-      throw new Error("Wait for the selected layout exports to finish before finding highlights.");
-    }
-    if (this.aiShotExportState.state === "PROCESSING"
-      || this.aiShortClipState.state === "PROCESSING"
-      || this.aiPreviewState.state === "PROCESSING") {
-      throw new Error("Wait for the running AI task to finish before finding highlights.");
-    }
-    this.assertNoHighlightExport("finding highlights.");
-    if (this.aiHighlightsState.state === "ANALYZING") {
-      throw new Error("Highlight analysis is already running.");
-    }
-    if (typeof request?.id !== "string" || !RECORDING_ID_PATTERN.test(request.id)) {
-      throw new Error("Select a valid recording to find highlights.");
-    }
-    const directory = join(this.recordingsRoot(), request.id);
-    let project: ProjectMetadata;
-    try {
-      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
-      await assertSourcesExist(projectSources(project, directory), directory);
-    } catch {
-      throw new Error("The selected recording's source files could not be found.");
-    }
-    const source = project.recordingResult as RecordingResult | undefined;
-    if (!source?.success) {
-      throw new Error("The selected recording has no finalized source for highlight analysis.");
-    }
-    const aiSource = await this.resolveAiSourceFile(directory, request.sourceFile);
-    const shotPath = aiSource.path;
-    this.projectDirectory = directory;
-    this.projectFile = join(directory, PROJECT_FILE);
-    this.projectMetadata = project;
-    this.finalizedResult = source;
-    this.aiHighlightsRecordingId = request.id;
-    const abort = new AbortController();
-    this.aiHighlightsAbort = abort;
-    this.aiHighlightsState = {
-      state: "ANALYZING",
-      stage: "Measuring clip…",
-      progress: null,
-      clips: [],
-      model: HIGHLIGHTS_MODEL_ID,
-      analyzedAt: null,
-    };
-    try {
-      const durationSeconds = await this.measureVideoDuration(shotPath, source.durationMs);
-      if (abort.signal.aborted) {
-        throw new Error("Highlight analysis cancelled");
-      }
-      this.aiHighlightsState = { ...this.aiHighlightsState, stage: "Uploading clip for analysis…" };
-      const raw = await this.highlightsProvider.analyzeVideo(shotPath, durationSeconds, abort.signal);
-      if (abort.signal.aborted) {
-        throw new Error("Highlight analysis cancelled");
-      }
-      this.aiHighlightsState = { ...this.aiHighlightsState, stage: "Reading suggestions…" };
-      const clips = parseHighlightSuggestions(raw, durationSeconds, HIGHLIGHTS_MODEL_ID);
-      if (clips.length === 0) {
-        throw new Error("The model returned no usable highlight moments. Try again.");
-      }
-      const analyzedAt = new Date().toISOString();
-      this.aiHighlightsState = {
-        state: "COMPLETED",
-        stage: null,
-        progress: 100,
-        clips,
-        model: HIGHLIGHTS_MODEL_ID,
-        analyzedAt,
-      };
-      await this.writeHighlightsSidecar(directory, durationSeconds, clips, analyzedAt, aiSource.file);
-      return { success: true, clips, model: HIGHLIGHTS_MODEL_ID, analyzedAt, error: null };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const cancelled = abort.signal.aborted || message === "Highlight analysis cancelled";
-      this.aiHighlightsState = {
-        state: cancelled ? "IDLE" : "ERROR",
-        stage: null,
-        progress: null,
-        clips: [],
-        model: HIGHLIGHTS_MODEL_ID,
-        analyzedAt: null,
-        ...(cancelled ? {} : { error: message }),
-      };
-      if (cancelled) {
-        throw new Error("Highlight analysis cancelled");
-      }
-      return { success: false, clips: [], model: HIGHLIGHTS_MODEL_ID, analyzedAt: null, error: message };
-    } finally {
-      if (this.aiHighlightsAbort === abort) {
-        this.aiHighlightsAbort = undefined;
-      }
-    }
+    return recordingAi.findHighlights(this.aiHost(), request);
   }
 
   cancelFindHighlights(): void {
@@ -1287,265 +715,12 @@ export class RecordingService {
     }
   }
 
-  // Cut one persisted suggestion from the ORIGINAL recording sources with the
-  // full scene composition. Never modifies the take's original recording.
   async exportHighlightClip(request: ExportHighlightClipRequest): Promise<HighlightClipExportResult> {
-    if (this.active || this.startPromise) {
-      throw new Error("Stop the current recording before exporting highlights.");
-    }
-    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
-      throw new Error("Wait for the selected layout exports to finish before exporting highlights.");
-    }
-    if (this.aiHighlightsState.state === "ANALYZING") {
-      throw new Error("Wait for highlight analysis to finish before exporting.");
-    }
-    if (this.highlightExportInFlight) {
-      throw new Error("A highlight export is already running.");
-    }
-    const clips = await this.loadHighlightClips(request?.id);
-    const index = request?.index;
-    if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= clips.clips.length) {
-      throw new Error("Select a valid highlight suggestion to export.");
-    }
-    const clip = this.clampClipToDuration(
-      {
-        ...clips.clips[index as number],
-        ...(typeof request?.startTime === "number" ? { startTime: request.startTime } : {}),
-        ...(typeof request?.endTime === "number" ? { endTime: request.endTime } : {}),
-      },
-      clips.durationSeconds,
-    );
-    this.highlightExportInFlight = true;
-    try {
-      const path = await this.cutHighlightClip(clips, clip, index as number);
-      await this.markHighlightExported(clips.directory, index as number, path);
-      return { success: true, paths: [path], error: null };
-    } finally {
-      this.highlightExportInFlight = false;
-    }
+    return recordingAi.exportHighlightClip(this.aiHost(), request);
   }
 
-  // Cut every persisted suggestion (or the validated edited list) from the
-  // ORIGINAL recording sources. Never modifies the take's original recording.
   async exportAllHighlightClips(request: ExportAllHighlightsRequest): Promise<HighlightClipExportResult> {
-    if (this.active || this.startPromise) {
-      throw new Error("Stop the current recording before exporting highlights.");
-    }
-    if (this.postProcessingState === "PROCESSING" || this.retryPromise) {
-      throw new Error("Wait for the selected layout exports to finish before exporting highlights.");
-    }
-    if (this.aiHighlightsState.state === "ANALYZING") {
-      throw new Error("Wait for highlight analysis to finish before exporting.");
-    }
-    if (this.highlightExportInFlight) {
-      throw new Error("A highlight export is already running.");
-    }
-    const loaded = await this.loadHighlightClips(request?.id);
-    const edited = Array.isArray(request?.clips) && request.clips.length > 0 ? request.clips : loaded.clips;
-    const durationSeconds = loaded.durationSeconds;
-    this.highlightExportInFlight = true;
-    try {
-      const paths: string[] = [];
-      for (let index = 0; index < edited.length; index += 1) {
-        const clip = this.clampClipToDuration(edited[index], durationSeconds);
-        const path = await this.cutHighlightClip(loaded, clip, index);
-        paths.push(path);
-        await this.markHighlightExported(loaded.directory, index, path);
-      }
-      if (paths.length === 0) {
-        throw new Error("There are no highlight suggestions to export.");
-      }
-      return { success: true, paths, error: null };
-    } finally {
-      this.highlightExportInFlight = false;
-    }
-  }
-
-  private clampClipToDuration(clip: AiHighlightSuggestion, durationSeconds: number): AiHighlightSuggestion {
-    const start = Math.min(Math.max(0, Number(clip.startTime) || 0), Math.max(0, durationSeconds - 0.5));
-    const end = Math.min(Math.max(0, Number(clip.endTime) || 0), durationSeconds);
-    if (!(start < end)) {
-      throw new Error("Highlight times are invalid: the end must be after the start.");
-    }
-    return { ...clip, startTime: start, endTime: end, source: "ai" };
-  }
-
-  // Highlights render from the ORIGINAL recording sources with the full scene
-  // composition (vertical layout at the take's export resolution) — the 360p
-  // file exists only to keep the AI upload small. Never modifies sources.
-  private async cutHighlightClip(
-    loaded: { directory: string; project: ProjectMetadata; source: RecordingResult; scene: RecordingScene },
-    clip: AiHighlightSuggestion,
-    index: number,
-  ): Promise<string> {
-    const fileName = highlightFileName(index, clip.category);
-    const outputPath = join(loaded.directory, "exports", fileName);
-    const startSeconds = Math.max(0, clip.startTime);
-    const lengthSeconds = Math.max(0.5, clip.endTime - clip.startTime);
-    try {
-      await this.renderLayout(loaded.source, "VERTICAL", loaded.scene, outputPath, loaded.project, () => {}, {
-        scope: "ai-short-clip",
-        clipRange: { startSeconds, lengthSeconds },
-      });
-    } catch (error) {
-      await rm(outputPath, { force: true }).catch((cleanupError: unknown) => {
-        console.error("Unable to remove incomplete highlight export:", cleanupError);
-      });
-      throw error;
-    }
-    return outputPath;
-  }
-
-  // ffprobe-measured duration of the analysis source; falls back to the take's
-  // recorded duration when ffprobe is unavailable. Never shells out: argv only.
-  private async measureVideoDuration(videoPath: string, fallbackDurationMs: number): Promise<number> {
-    const fallbackSeconds = Math.max(0.1, (Number(fallbackDurationMs) || 0) / 1000);
-    const ffprobePath = process.env.BABU_STUDIO_FFPROBE_PATH || "ffprobe";
-    try {
-      const { spawn } = await import("node:child_process");
-      const output = await new Promise<string>((resolve, reject) => {
-        const child = spawn(
-          ffprobePath,
-          ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", videoPath],
-          { stdio: ["ignore", "pipe", "pipe"] },
-        );
-        let stdout = "";
-        child.stdout.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
-          stdout += chunk;
-        });
-        child.once("error", reject);
-        child.once("close", (code) => {
-          if (code === 0) {
-            resolve(stdout.trim());
-          } else {
-            reject(new Error(`ffprobe exited with code ${code ?? "unknown"}`));
-          }
-        });
-      });
-      const seconds = Number(output);
-      if (Number.isFinite(seconds) && seconds > 0) {
-        return seconds;
-      }
-      return fallbackSeconds;
-    } catch {
-      return fallbackSeconds;
-    }
-  }
-
-  private async writeHighlightsSidecar(
-    directory: string,
-    durationSeconds: number,
-    clips: AiHighlightSuggestion[],
-    analyzedAt: string,
-    sourceFile: string,
-  ): Promise<void> {
-    const sidecar = {
-      version: 1,
-      model: HIGHLIGHTS_MODEL_ID,
-      analyzedAt,
-      durationSeconds,
-      sourceFile,
-      clips: clips.map((clip) => ({ ...clip, source: "ai" })),
-      exports: clips.map(() => ({ state: "PENDING", path: null as string | null })),
-    };
-    await mkdir(join(directory, "exports"), { recursive: true });
-    await writeFile(join(directory, "exports", AI_HIGHLIGHTS_FILE), JSON.stringify(sidecar, null, 2));
-  }
-
-  private async loadHighlightClips(id: string): Promise<{ directory: string; clips: AiHighlightSuggestion[]; durationSeconds: number; project: ProjectMetadata; source: RecordingResult; scene: RecordingScene }> {
-    if (typeof id !== "string" || !RECORDING_ID_PATTERN.test(id)) {
-      throw new Error("Select a valid recording for highlight export.");
-    }
-    const directory = join(this.recordingsRoot(), id);
-    let sidecar: { clips?: unknown; durationSeconds?: unknown; sourceFile?: unknown };
-    try {
-      sidecar = JSON.parse(await readFile(join(directory, "exports", AI_HIGHLIGHTS_FILE), "utf8"));
-    } catch {
-      throw new Error("Find highlights first, then export the suggestions.");
-    }
-    const rawClips = Array.isArray(sidecar.clips) ? sidecar.clips : [];
-    const durationSeconds = Number(sidecar.durationSeconds);
-    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-      throw new Error("The saved highlight analysis is unreadable. Run Find Highlights again.");
-    }
-    const clips = parseHighlightSuggestions(rawClips, durationSeconds, HIGHLIGHTS_MODEL_ID);
-    if (clips.length === 0) {
-      throw new Error("The saved highlight analysis is unreadable. Run Find Highlights again.");
-    }
-    let project: ProjectMetadata;
-    try {
-      project = JSON.parse(await readFile(join(directory, PROJECT_FILE), "utf8")) as ProjectMetadata;
-      await assertSourcesExist(projectSources(project, directory), directory);
-    } catch {
-      throw new Error("The selected recording's source files could not be found.");
-    }
-    const source = project.recordingResult as RecordingResult | undefined;
-    if (!source?.success) {
-      throw new Error("The selected recording has no finalized source to export.");
-    }
-    const scene = project.scene as RecordingScene | undefined;
-    if (!scene) {
-      throw new Error("The shared scene configuration was not saved with this recording.");
-    }
-    this.projectDirectory = directory;
-    this.projectFile = join(directory, PROJECT_FILE);
-    this.projectMetadata = project;
-    this.finalizedResult = source;
-    return { directory, clips, durationSeconds, project, source, scene };
-  }
-
-  private async markHighlightExported(directory: string, index: number, path: string): Promise<void> {
-    try {
-      const sidecarPath = join(directory, "exports", AI_HIGHLIGHTS_FILE);
-      const sidecar = JSON.parse(await readFile(sidecarPath, "utf8")) as {
-        exports?: Array<{ state: string; path: string | null }>;
-      };
-      if (Array.isArray(sidecar.exports) && sidecar.exports[index]) {
-        sidecar.exports[index] = { state: "COMPLETED", path };
-        await writeFile(sidecarPath, JSON.stringify(sidecar, null, 2));
-      }
-    } catch (error) {
-      console.error("Unable to record highlight export status:", error);
-    }
-  }
-
-  private recordingsRoot(): string {
-    return join(app.getPath("videos"), "Babu Studio");
-  }
-
-  private async startExport(result: RecordingResult): Promise<RecordingResult> {
-    const projectMetadata = this.projectMetadata;
-    const projectDirectory = this.projectDirectory;
-    if (!projectMetadata || !projectDirectory) {
-      throw new Error("The recording project directory is unavailable.");
-    }
-    this.postProcessingState = "PROCESSING";
-    this.postProcessingError = undefined;
-    projectMetadata.postProcessingStartedAt = new Date().toISOString();
-    projectMetadata.postProcessingError = null;
-    projectMetadata.postProcessingFailedAt = null;
-    this.exportPaths = {};
-    this.exportStates = this.selectedExportModes.map((mode) => {
-      const path = join(projectDirectory, "exports", mode === "HORIZONTAL" ? "horizontal.mp4" : "vertical.mp4");
-      this.exportPaths[mode] = path;
-      return { mode, path, state: "PENDING", progress: 0 };
-    });
-    this.exportPath = this.exportPaths[result.recordingMode] ?? this.exportStates[0]?.path ?? null;
-    projectMetadata.status = "SOURCE_FINALIZED";
-    projectMetadata.postProcessingStatus = this.postProcessingState;
-    projectMetadata.exportFiles = { ...this.exportPaths };
-    projectMetadata.exports = this.exportStates;
-    try {
-      await mkdir(join(projectDirectory, "exports"), { recursive: true });
-      await this.writeProject();
-    } catch (error) {
-      await this.handlePostProcessingFailure(new Error(`Unable to save project metadata before export: ${error instanceof Error ? error.message : String(error)}`));
-      return this.withPostProcessing(result);
-    }
-
-    this.launchPostProcessing(result);
-    return this.withPostProcessing(result);
+    return recordingAi.exportAllHighlightClips(this.aiHost(), request);
   }
 
   async getStatus(): Promise<RecordingResult> {
@@ -1629,7 +804,7 @@ export class RecordingService {
     if (!result?.success || !this.projectMetadata || !this.projectFile || !this.projectDirectory) {
       throw new Error("There is no finalized source recording available to export.");
     }
-    const retryPromise = this.beginRetryPostProcessing(result);
+    const retryPromise = exportRenderer.beginRetryPostProcessing(this.exportHost(), result);
     this.retryPromise = retryPromise;
     try {
       return await retryPromise;
@@ -1637,354 +812,6 @@ export class RecordingService {
       if (this.retryPromise === retryPromise) {
         this.retryPromise = undefined;
       }
-    }
-  }
-
-  private async beginRetryPostProcessing(result: RecordingResult): Promise<RecordingResult> {
-    const projectMetadata = this.projectMetadata;
-    if (!projectMetadata) {
-      throw new Error("The recording project metadata is unavailable.");
-    }
-    this.postProcessingState = "PROCESSING";
-    this.postProcessingError = undefined;
-    this.exportPath = this.exportPaths[result.recordingMode] ?? null;
-    this.exportStates = this.exportStates.map((entry) => (
-      entry.state === "COMPLETED"
-        ? entry
-        : { ...entry, state: "PENDING", progress: 0, error: undefined }
-    ));
-    projectMetadata.postProcessingStatus = this.postProcessingState;
-    projectMetadata.status = "SOURCE_FINALIZED";
-    projectMetadata.postProcessingError = null;
-    projectMetadata.postProcessingFailedAt = null;
-    projectMetadata.exports = this.exportStates;
-    projectMetadata.postProcessingStartedAt = new Date().toISOString();
-    try {
-      await this.writeProject();
-    } catch (error) {
-      await this.handlePostProcessingFailure(new Error(`Unable to save project metadata before retry: ${error instanceof Error ? error.message : String(error)}`));
-      throw error;
-    }
-    this.launchPostProcessing(result);
-    return this.withPostProcessing(result);
-  }
-
-  private launchPostProcessing(result: RecordingResult): void {
-    this.postProcessingCancelled = false;
-    // Hold the guard from launch until every export (and failure handling) has finished.
-    const releasePowerGuard = powerGuard.acquire();
-    this.postProcessingPromise = this.postProcess(result)
-      .catch((error: unknown) => this.handlePostProcessingFailure(error))
-      .finally(releasePowerGuard);
-  }
-
-  private async handlePostProcessingFailure(error: unknown): Promise<void> {
-    this.postProcessingState = "ERROR";
-    this.postProcessingError = error instanceof Error ? error.message : String(error);
-    const activeExport = this.exportStates.find((entry) => entry.state === "PROCESSING");
-    if (activeExport) {
-      activeExport.state = "ERROR";
-      activeExport.error = this.postProcessingError;
-    }
-    if (this.projectMetadata) {
-      this.projectMetadata.postProcessingStatus = this.postProcessingState;
-      this.projectMetadata.status = "EXPORT_FAILED";
-      this.projectMetadata.postProcessingError = this.postProcessingError;
-      this.projectMetadata.postProcessingFailedAt = new Date().toISOString();
-      this.projectMetadata.exports = this.exportStates;
-    }
-    if (this.activeExportPath) {
-      await rm(this.activeExportPath, { force: true }).catch((cleanupError: unknown) => {
-        console.error("Unable to remove incomplete export:", cleanupError);
-      });
-      this.activeExportPath = undefined;
-    }
-    try {
-      await this.writeProject();
-    } catch (metadataError) {
-      console.error("Unable to save post-processing failure to project metadata:", metadataError);
-    }
-    console.error("Recording post-processing failed:", error);
-  }
-
-  private async postProcess(result: RecordingResult): Promise<void> {
-    const project = this.projectMetadata;
-    const scene = project?.scene as RecordingScene | undefined;
-    if (!project || !scene || !this.projectDirectory) {
-      throw new Error("The shared scene configuration was not saved with this recording.");
-    }
-    const failedExports: string[] = [];
-    for (const exportEntry of this.exportStates) {
-      if (exportEntry.state === "COMPLETED") {
-        continue;
-      }
-      if (this.postProcessingCancelled) {
-        exportEntry.state = "ERROR";
-        exportEntry.error = "Export cancelled";
-        failedExports.push(`${exportEntry.mode}: ${exportEntry.error}`);
-        continue;
-      }
-      exportEntry.state = "PROCESSING";
-      exportEntry.error = undefined;
-      exportEntry.progress = 0;
-      this.activeExportPath = exportEntry.path;
-      project.exports = this.exportStates;
-      await this.writeProject();
-      try {
-        await mkdir(dirname(exportEntry.path), { recursive: true });
-        await this.renderLayout(
-          result,
-          exportEntry.mode,
-          scene,
-          exportEntry.path,
-          project,
-          (progress) => { exportEntry.progress = progress; },
-        );
-        exportEntry.state = "COMPLETED";
-        exportEntry.progress = 100;
-      } catch (error) {
-        exportEntry.state = "ERROR";
-        exportEntry.error = error instanceof Error ? error.message : String(error);
-        failedExports.push(`${exportEntry.mode}: ${exportEntry.error}`);
-        await rm(exportEntry.path, { force: true }).catch((cleanupError: unknown) => {
-          console.error(`Unable to remove incomplete ${exportEntry.mode} export:`, cleanupError);
-        });
-        console.error(`${exportEntry.mode} export failed:`, error);
-      } finally {
-        this.activeExportPath = undefined;
-      }
-      project.exports = this.exportStates;
-      await this.writeProject();
-    }
-
-    this.postProcessingState = failedExports.length > 0 ? "ERROR" : "COMPLETED";
-    this.postProcessingError = failedExports.length > 0 ? failedExports.join("; ") : undefined;
-    project.postProcessingStatus = this.postProcessingState;
-    project.status = this.postProcessingCancelled
-      ? "EXPORT_CANCELLED"
-      : failedExports.length > 0 ? "EXPORT_FAILED" : "COMPLETED";
-    project.postProcessingError = this.postProcessingError ?? null;
-    if (failedExports.length > 0) {
-      project.postProcessingFailedAt = new Date().toISOString();
-      project.postProcessingCompletedAt = null;
-    } else {
-      project.postProcessingFailedAt = null;
-      project.postProcessingCompletedAt = new Date().toISOString();
-    }
-    await this.writeProject();
-  }
-
-  private async renderLayout(
-    result: RecordingResult,
-    mode: RecordingMode,
-    scene: RecordingScene,
-    exportPath: string,
-    project: ProjectMetadata,
-    onProgress: (progress: number) => void,
-    options?: { previewQuality?: boolean; forcedCanvas?: { width: number; height: number }; scope?: "export" | "ai-preview" | "ai-shot" | "ai-short-clip"; clipRange?: { startSeconds: number; lengthSeconds: number } },
-  ): Promise<void> {
-    const preview = options?.previewQuality === true;
-    const ffmpegScope = options?.scope ?? (preview ? "ai-preview" : "export");
-    const isCancelled = () => this.isScopeCancelled(ffmpegScope);
-    // Highlight exports render only a time window of the take. A uniform
-    // input seek on every source keeps the tracks aligned exactly as they
-    // are in a full export; only the window changes.
-    const clipStart = Math.max(0, options?.clipRange?.startSeconds ?? 0);
-    const projectDirectory = this.projectDirectory;
-    if (!projectDirectory) {
-      throw new Error("The recording project directory is unavailable.");
-    }
-    const videoTracks = result.videoTracks;
-    const activeLayers = scene.layers.filter((layer) => layer.enabled);
-    const videoLayers = activeLayers.filter((layer) => layer.kind === "game-capture" || layer.kind === "camera-device").reverse();
-    if (videoLayers.length === 0) {
-      throw new Error(`${mode} scene has no recorded capture-card or webcam video source.`);
-    }
-    const audioTrackNames = result.audioTracks;
-    const sourceEntries = projectSources(project, projectDirectory) ?? resultSourceFiles(result);
-    const inputs = sourceEntries ? sourceEntries.map((entry) => entry.path) : [join(projectDirectory, MASTER_FILE)];
-    const videoRefFor = (trackName: string): string => {
-      if (sourceEntries) {
-        const input = sourceEntries.findIndex((entry) => entry.kind === "video" && entry.name === trackName);
-        if (input < 0) {
-          throw new Error(`${trackName} is configured in the scene but has no recorded video file.`);
-        }
-        return `[${input}:v:0]`;
-      }
-      const trackIndex = videoTracks.indexOf(trackName);
-      if (trackIndex < 0) {
-        throw new Error(`${trackName} is configured in the scene but has no recorded video track.`);
-      }
-      return `[0:v:${trackIndex}]`;
-    };
-    const audioRefFor = (trackName: string): string => {
-      if (sourceEntries) {
-        const input = sourceEntries.findIndex((entry) => entry.kind === "audio" && entry.name === trackName);
-        if (input < 0) {
-          throw new Error(`${trackName} is configured in the scene but has no recorded audio file.`);
-        }
-        return `[${input}:a:0]`;
-      }
-      const trackIndex = audioTrackNames.indexOf(trackName);
-      if (trackIndex < 0) {
-        throw new Error(`${trackName} is configured in the scene but has no recorded audio track.`);
-      }
-      return `[0:a:${trackIndex}]`;
-    };
-    const audioSettings = project.audio && typeof project.audio === "object"
-      ? project.audio as { gameVolume?: number; microphoneVolume?: number; noiseReduction?: NoiseReductionLevel }
-      : {};
-    const microphoneNoiseReduction = isNoiseReductionLevel(audioSettings.noiseReduction)
-      ? audioSettings.noiseReduction
-      : DEFAULT_NOISE_REDUCTION;
-    const audioLayers = [
-      { trackName: "Game Audio", volume: finite(audioSettings.gameVolume ?? 1, 1), noiseReduction: DEFAULT_NOISE_REDUCTION },
-      { trackName: "Microphone", volume: finite(audioSettings.microphoneVolume ?? 1, 1), noiseReduction: microphoneNoiseReduction },
-    ].filter((track) => audioTrackNames.includes(track.trackName));
-    const trackStartOffsetMs = (name: string, kind: "video" | "audio") => {
-      const track = result.trackStats?.find((candidate) => candidate.name === name && candidate.kind === kind);
-      return Math.max(0, Math.round(finite(track?.startOffsetMs ?? 0)));
-    };
-
-    const projectCanvas = project.canvas as {
-      exportResolution?: keyof typeof EXPORT_RESOLUTIONS;
-      fps?: number;
-    };
-    const resolution = EXPORT_RESOLUTIONS[projectCanvas.exportResolution ?? DEFAULT_EXPORT_RESOLUTION]
-      ?? EXPORT_RESOLUTIONS[DEFAULT_EXPORT_RESOLUTION];
-    const canvas = options?.forcedCanvas
-      ?? (preview
-        ? { width: AI_PREVIEW_WIDTH, height: AI_PREVIEW_HEIGHT }
-        : mode === "VERTICAL" ? resolution.vertical : resolution.horizontal);
-    const width = canvas.width;
-    const height = canvas.height;
-    const fps = preview ? AI_PREVIEW_FPS : Math.round(finite(projectCanvas.fps ?? 60, 60));
-    const durationSeconds = options?.clipRange
-      ? Math.max(0.1, options.clipRange.lengthSeconds)
-      : Math.max(0.1, result.durationMs / 1000);
-    const graph: string[] = [`color=c=black:s=${width}x${height}:r=${fps}:d=${durationSeconds.toFixed(3)},format=yuv420p[base0]`];
-    let currentVideo = "base0";
-    let nextLayer = 0;
-    for (const layer of videoLayers) {
-      const trackName = layer.kind === "game-capture" ? "Gameplay" : "Webcam";
-      const videoRef = videoRefFor(trackName);
-      const source = getSourceDimensions(layer);
-      const sourceWidth = Math.max(2, finite(source.width, 1920));
-      const sourceHeight = Math.max(2, finite(source.height, 1080));
-      const crop = layer.crop;
-      const left = Math.max(0, Math.min(sourceWidth - 2, Math.round(finite(crop.left))));
-      const right = Math.max(0, Math.min(sourceWidth - left - 2, Math.round(finite(crop.right))));
-      const top = Math.max(0, Math.min(sourceHeight - 2, Math.round(finite(crop.top))));
-      const bottom = Math.max(0, Math.min(sourceHeight - top - 2, Math.round(finite(crop.bottom))));
-      const transform = layer.transforms[mode === "VERTICAL" ? "portrait" : "landscape"];
-      const visibleWidth = sourceWidth - left - right;
-      const visibleHeight = sourceHeight - top - bottom;
-      const xPct = finite(transform.x) + finite(transform.width) * left / sourceWidth;
-      const yPct = finite(transform.y) + finite(transform.height) * top / sourceHeight;
-      const targetWidth = evenDimension(width * finite(transform.width) * visibleWidth / sourceWidth / 100);
-      const targetHeight = evenDimension(height * finite(transform.height) * visibleHeight / sourceHeight / 100);
-      const x = Math.round(width * xPct / 100);
-      const y = Math.round(height * yPct / 100);
-      const sourceOffsetSeconds = (trackStartOffsetMs(trackName, "video") / 1000).toFixed(3);
-      const layerLabel = `layer${nextLayer}`;
-      const composedLabel = `base${nextLayer + 1}`;
-      graph.push(
-        `${videoRef}setpts=PTS-STARTPTS+${sourceOffsetSeconds}/TB,crop=iw-${left + right}:ih-${top + bottom}:${left}:${top},scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1,format=yuva420p[${layerLabel}]`,
-      );
-      graph.push(`[${currentVideo}][${layerLabel}]overlay=${x}:${y}:format=yuv420:eof_action=pass:shortest=0[${composedLabel}]`);
-      currentVideo = composedLabel;
-      nextLayer += 1;
-    }
-
-    const args = [
-      "-hide_banner",
-      "-loglevel", "error",
-      "-progress", "pipe:2",
-      "-nostats",
-      "-y",
-      "-threads", "0",
-      "-filter_threads", String(os.cpus().length),
-      "-filter_complex_threads", String(os.cpus().length),
-      ...inputs.flatMap((input) => clipStart > 0 ? ["-ss", clipStart.toFixed(3), "-i", input] : ["-i", input]),
-    ];
-    const gameAudio = audioLayers.find((track) => track.trackName === "Game Audio");
-    const microphone = audioLayers.find((track) => track.trackName === "Microphone");
-    const inputFor = (track: (typeof audioLayers)[number]) => audioRefFor(track.trackName);
-    const gainFor = (track: (typeof audioLayers)[number]) => Math.max(0, Math.min(MAX_AUDIO_GAIN, track.volume)).toFixed(4);
-    const alignAudioTrack = (track: (typeof audioLayers)[number]) => {
-      const delayMs = trackStartOffsetMs(track.trackName, "audio");
-      const delay = delayMs > 0 ? `,adelay=${delayMs}|${delayMs}` : "";
-      const noiseReduction = NOISE_REDUCTION_FILTERS[track.noiseReduction];
-      return `${inputFor(track)}aresample=48000,asetpts=PTS-STARTPTS${delay}${noiseReduction ? `,${noiseReduction}` : ""}`;
-    };
-    let audioOutputLabel: string | undefined;
-    if (gameAudio && microphone) {
-      // No ducking: game audio keeps a constant level; voice is louder on top of it.
-      graph.push(`${alignAudioTrack(gameAudio)},volume=${(Number(gainFor(gameAudio)) * 0.8).toFixed(4)}[gameAudio]`);
-      graph.push(
-        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4,volume=1.5[voice]`,
-      );
-      graph.push("[gameAudio][voice]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:attack=5:release=250[mixedAudio]");
-      audioOutputLabel = "[mixedAudio]";
-    } else if (microphone) {
-      graph.push(
-        `${alignAudioTrack(microphone)},volume=${gainFor(microphone)},acompressor=threshold=0.1:ratio=2:attack=5:release=200:makeup=4,alimiter=limit=0.95[mixedAudio]`,
-      );
-      audioOutputLabel = "[mixedAudio]";
-    } else if (gameAudio) {
-      graph.push(`${alignAudioTrack(gameAudio)},volume=${gainFor(gameAudio)},alimiter=limit=0.95[mixedAudio]`);
-      audioOutputLabel = "[mixedAudio]";
-    }
-    args.push("-filter_complex", graph.join(";"), "-map", `[${currentVideo}]`);
-    if (audioOutputLabel) {
-      args.push("-map", audioOutputLabel);
-    }
-    args.push(
-      "-t", durationSeconds.toFixed(3),
-      "-r", String(fps),
-      "-c:v", "h264_videotoolbox", "-allow_sw", "1",
-      ...(preview
-        ? ["-b:v", "1.5M", "-profile:v", "high"]
-        : [
-          "-b:v", width >= 3840 ? "40M" : width >= 1920 || height >= 1920 ? "20M" : "10M",
-          "-realtime", "0", "-prio_speed", "1", "-profile:v", "high",
-        ]),
-      ...(audioOutputLabel ? ["-c:a", "aac", "-b:a", preview ? "128k" : "192k"] : []),
-      "-movflags", "+faststart",
-      exportPath,
-    );
-
-    if (isCancelled()) {
-      throw new Error("Export cancelled");
-    }
-    try {
-      await this.runFfmpegTracked(args, durationSeconds, onProgress, ffmpegScope);
-    } catch (hardwareError) {
-      await rm(exportPath, { force: true });
-      if (isCancelled()) {
-        throw new Error("Export cancelled");
-      }
-      onProgress(0);
-      const softwareArgs = [...args];
-      const encoderIndex = softwareArgs.indexOf("h264_videotoolbox");
-      if (encoderIndex < 0) {
-        throw hardwareError;
-      }
-      softwareArgs[encoderIndex] = "libx264";
-      softwareArgs.splice(encoderIndex + 1, 0, "-preset", "veryfast", "-crf", preview ? "28" : "20");
-      const bitrateIndex = softwareArgs.indexOf("-b:v");
-      const bitrateFlags = softwareArgs.indexOf("-realtime");
-      if (bitrateIndex >= 0) {
-        softwareArgs.splice(bitrateIndex, 2);
-      }
-      if (bitrateFlags >= 0) {
-        softwareArgs.splice(softwareArgs.indexOf("-realtime"), 4);
-      }
-      const softwareFallbackIndex = softwareArgs.indexOf("-allow_sw");
-      if (softwareFallbackIndex >= 0) {
-        softwareArgs.splice(softwareFallbackIndex, 2);
-      }
-      await this.runFfmpegTracked(softwareArgs, durationSeconds, onProgress, ffmpegScope);
     }
   }
 
@@ -2034,11 +861,5 @@ export class RecordingService {
         onProgress(progress);
       },
     );
-  }
-
-  private async writeProject(): Promise<void> {
-    if (this.projectFile && this.projectMetadata) {
-      await writeFile(this.projectFile, JSON.stringify(this.projectMetadata, null, 2));
-    }
   }
 }

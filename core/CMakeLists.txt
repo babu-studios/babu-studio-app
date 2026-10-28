@@ -17,6 +17,10 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavut
 add_library(creator_media_core STATIC
   src/core/media_core.cpp
   src/core/master_recorder.cpp
+  src/core/recorder_encoder.cpp
+  src/core/recorder_ingest.cpp
+  src/core/recorder_session.cpp
+  src/core/recorder_synthetic.cpp
 )
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../platform/macos"
   "${CMAKE_CURRENT_BINARY_DIR}/platform/macos")
