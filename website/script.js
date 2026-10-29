@@ -168,6 +168,25 @@
   });
 })();
 
+// Scroll reveals: fade sections in as they enter the viewport.
+(function () {
+  var items = document.querySelectorAll(".reveal");
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!("IntersectionObserver" in window) || reduceMotion) {
+    items.forEach(function (el) { el.classList.add("visible"); });
+    return;
+  }
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("visible");
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12 });
+  items.forEach(function (el) { observer.observe(el); });
+})();
+
 // Recommend the build for the visitor's Mac when the browser can tell us.
 (function () {
   var canvas = document.createElement("canvas");

@@ -507,5 +507,53 @@ pre code { padding: 0; background: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  * { transition: none !important; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1 !important; transform: none !important; }
 }
+
+/* Motion: hero entrance, scroll reveals, shimmer */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.92); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes shimmer-slide {
+  to { background-position: 220% 0; }
+}
+@keyframes accordion-open {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.hero .eyebrow { animation: pop-in 0.6s ease-out both; }
+.hero h1 { animation: rise-in 0.7s ease-out 0.08s both; }
+.hero .lead { animation: rise-in 0.7s ease-out 0.16s both; }
+.hero .downloads { animation: rise-in 0.7s ease-out 0.24s both; }
+.hero .hero-shot { animation: rise-in 0.8s ease-out 0.34s both; }
+.hero .highlights { animation: rise-in 0.8s ease-out 0.44s both; }
+
+.gradient-text {
+  background-size: 220% 100%;
+  animation: shimmer-slide 6s linear infinite;
+}
+
+.reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.55s ease-out, transform 0.55s ease-out; }
+.reveal.visible { opacity: 1; transform: none; }
+.feature-grid .reveal:nth-child(2), .how-steps .reveal:nth-child(2) { transition-delay: 0.08s; }
+.feature-grid .reveal:nth-child(3), .how-steps .reveal:nth-child(3) { transition-delay: 0.16s; }
+.feature-grid .reveal:nth-child(4) { transition-delay: 0.24s; }
+.feature-grid .reveal:nth-child(5) { transition-delay: 0.32s; }
+.feature-grid .reveal:nth-child(6) { transition-delay: 0.4s; }
+
+.hero-shot img { animation: drift 8s ease-in-out 1.2s infinite; }
+
+details.accordion[open] > :not(summary) { animation: accordion-open 0.3s ease-out; }
+
+.lightbox:not([hidden]) { animation: pop-in 0.2s ease-out; }
