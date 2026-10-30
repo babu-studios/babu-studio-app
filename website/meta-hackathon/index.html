@@ -3,30 +3,34 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Babu Studio — Record the game. Let Meta AI cut the clips.</title>
-<meta name="description" content="Babu Studio: macOS game-recording studio with a 5-step AI clips wizard powered by Meta's Model API.">
+<title>Babu AI Studio — Record the game. Let Meta AI cut the clips.</title>
+<meta name="description" content="Babu AI Studio: macOS game-recording studio with a 5-step AI clips wizard powered by Meta's Model API.">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="sticky-top">
 <p class="notice-bar">This website is built using <strong>Muse Spark 1.3</strong> · <span class="meta-text">Meta AI</span></p>
 <header class="topbar" id="top">
-  <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Babu Studio</a>
+  <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Babu AI Studio <span class="brand-meta">(meta ai)</span></a>
   <nav class="topnav" aria-label="Page">
     <a href="#ai-pipeline">AI pipeline</a>
     <a href="#results">AI results</a>
+    <a href="#architecture">Architecture</a>
     <a href="#features">Features</a>
     <a href="#meta">Meta models</a>
     <a href="#install">Install</a>
     <a href="#download">Download</a>
+    <a href="#room">3D Room</a>
   </nav>
   <a class="btn btn-small" href="#download">Get the app</a>
 </header>
+</div>
 
 <main>
   <section class="hero">
     <div class="hero-copy">
       <h1>Record the game.<br>Let <span class="meta-text">Meta AI</span> cut the clips.</h1>
-      <p class="lede">Babu Studio is a macOS recording studio for gamers and creators. Capture every source separately, then turn a full recording into short clips in five guided steps — highlights, mic-to-WAV, and multilingual subtitles powered by <strong>muse-voice-transcribe-1.0</strong> and <strong>muse-spark-1.3</strong>.</p>
+      <p class="lede">Babu AI Studio is a macOS recording studio for gamers and creators. Capture every source separately, then turn a full recording into short clips in five guided steps — highlights, mic-to-WAV, and multilingual subtitles powered by <strong>muse-voice-transcribe-1.0</strong> and <strong>muse-spark-1.3</strong>.</p>
       <div class="hero-actions">
         <a class="btn" href="#download">Download for Mac</a>
         <a class="btn btn-ghost" href="#ai-pipeline">See the AI pipeline</a>
@@ -74,7 +78,7 @@
   <section class="strip strip-alt" id="results">
     <div class="section-head">
       <h2>One recording in, AI highlights out</h2>
-      <p>We recorded a gaming session in Babu Studio, then let <span class="meta-text">Meta AI</span> find the best moments and write the subtitles. Below are the real outputs — the full originals, five AI-suggested Shorts, and subtitles in three languages.</p>
+      <p>We recorded a gaming session in Babu AI Studio, then let <span class="meta-text">Meta AI</span> find the best moments and write the subtitles. Below are the real outputs — the full originals, five AI-suggested Shorts, and subtitles in three languages.</p>
     </div>
 
     <h3 class="group-title"><span class="tag tag-orig">Original</span> Full recordings</h3>
@@ -321,7 +325,193 @@ NATO ਚਲੋ ਯਾਰੋ
     </div>
   </section>
 
-  <section class="strip" id="features">
+  <section class="strip" id="architecture">
+    <div class="section-head">
+      <h2>Application architecture</h2>
+      <p>How the app is built, and exactly what the AI steps do — with the real file names, endpoints, and models from the codebase.</p>
+    </div>
+
+    <h3 class="group-title"><span class="tag tag-orig">On your Mac</span> From devices to files</h3>
+    <p class="group-sub">Devices are captured by a C++ media core, saved as separate per-source masters, then composed and exported by a bundled FFmpeg.</p>
+    <div class="diagram-scroll reveal">
+      <svg viewBox="0 0 1040 470" role="img" aria-label="Application architecture: devices, C++ media core, take folder, scene and mix, FFmpeg export">
+        <defs>
+          <marker id="arr1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7d8783"></path></marker>
+        </defs>
+        <text class="dg-h" x="85" y="28" text-anchor="middle">DEVICES</text>
+        <text class="dg-h" x="280" y="28" text-anchor="middle">MEDIA CORE · C++</text>
+        <text class="dg-h" x="495" y="28" text-anchor="middle">TAKE FOLDER</text>
+        <text class="dg-h" x="710" y="28" text-anchor="middle">SCENE + MIX</text>
+        <text class="dg-h" x="930" y="28" text-anchor="middle">EXPORT · FFmpeg</text>
+        <rect class="dg-box" x="10" y="44" width="150" height="64" rx="4"></rect>
+        <text class="dg-title" x="85" y="68" text-anchor="middle">Capture card</text>
+        <text class="dg-text" x="85" y="86" text-anchor="middle">gameplay video</text>
+        <text class="dg-text" x="85" y="102" text-anchor="middle">+ game audio</text>
+        <rect class="dg-box" x="10" y="120" width="150" height="64" rx="4"></rect>
+        <text class="dg-title" x="85" y="146" text-anchor="middle">Webcam</text>
+        <text class="dg-text" x="85" y="164" text-anchor="middle">camera feed</text>
+        <rect class="dg-box" x="10" y="196" width="150" height="64" rx="4"></rect>
+        <text class="dg-title" x="85" y="222" text-anchor="middle">Microphone</text>
+        <text class="dg-text" x="85" y="240" text-anchor="middle">voice track</text>
+        <rect class="dg-box" x="195" y="44" width="170" height="104" rx="4"></rect>
+        <text class="dg-title" x="280" y="68" text-anchor="middle">creator-media-core</text>
+        <text class="dg-text" x="280" y="86" text-anchor="middle">AVFoundation capture</text>
+        <text class="dg-text" x="280" y="102" text-anchor="middle">capture-clock sync</text>
+        <text class="dg-text" x="280" y="118" text-anchor="middle">per-source record</text>
+        <rect class="dg-box" x="195" y="160" width="170" height="100" rx="4"></rect>
+        <text class="dg-title" x="280" y="184" text-anchor="middle">stdio host</text>
+        <text class="dg-text" x="280" y="202" text-anchor="middle">newline commands</text>
+        <text class="dg-text" x="280" y="218" text-anchor="middle">spawned by Electron</text>
+        <text class="dg-text" x="280" y="234" text-anchor="middle">main process</text>
+        <rect class="dg-box" x="400" y="44" width="190" height="216" rx="4"></rect>
+        <text class="dg-title" x="495" y="68" text-anchor="middle">Take · recording-*</text>
+        <text class="dg-mono" x="495" y="90" text-anchor="middle">master/gameplay.mkv</text>
+        <text class="dg-mono" x="495" y="107" text-anchor="middle">master/webcam.mkv</text>
+        <text class="dg-mono" x="495" y="124" text-anchor="middle">master/game-audio.m4a</text>
+        <text class="dg-mono" x="495" y="141" text-anchor="middle">master/microphone.m4a</text>
+        <text class="dg-mono" x="495" y="158" text-anchor="middle">project.babu</text>
+        <line class="dg-edge" x1="415" y1="176" x2="575" y2="176"></line>
+        <text class="dg-text" x="495" y="196" text-anchor="middle">untouched originals</text>
+        <text class="dg-text" x="495" y="213" text-anchor="middle">legacy: single master.babu</text>
+        <rect class="dg-box" x="625" y="44" width="170" height="104" rx="4"></rect>
+        <text class="dg-title" x="710" y="68" text-anchor="middle">Shared scene</text>
+        <text class="dg-text" x="710" y="86" text-anchor="middle">same layer list</text>
+        <text class="dg-text" x="710" y="102" text-anchor="middle">independent 16:9</text>
+        <text class="dg-text" x="710" y="118" text-anchor="middle">and 9:16 frames</text>
+        <rect class="dg-box" x="625" y="160" width="170" height="100" rx="4"></rect>
+        <text class="dg-title" x="710" y="184" text-anchor="middle">Mixer + denoise</text>
+        <text class="dg-text" x="710" y="202" text-anchor="middle">levels 0–200%</text>
+        <text class="dg-text" x="710" y="218" text-anchor="middle">high-pass + FFT hiss</text>
+        <text class="dg-text" x="710" y="234" text-anchor="middle">compress + limit</text>
+        <rect class="dg-box" x="830" y="44" width="200" height="104" rx="4"></rect>
+        <text class="dg-title" x="930" y="68" text-anchor="middle">Sequential renders</text>
+        <text class="dg-text" x="930" y="86" text-anchor="middle">bundled FFmpeg</text>
+        <text class="dg-text" x="930" y="102" text-anchor="middle">clock offsets kept</text>
+        <text class="dg-text" x="930" y="118" text-anchor="middle">blocking progress %</text>
+        <rect class="dg-box" x="830" y="160" width="200" height="100" rx="4"></rect>
+        <text class="dg-mono" x="930" y="190" text-anchor="middle">export/horizontal.mp4</text>
+        <text class="dg-mono" x="930" y="207" text-anchor="middle">export/vertical.mp4</text>
+        <text class="dg-text" x="930" y="228" text-anchor="middle">360p–4K · default 1080p</text>
+        <line class="dg-edge" x1="160" y1="76" x2="192" y2="76" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="160" y1="152" x2="192" y2="152" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="160" y1="228" x2="192" y2="228" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="365" y1="96" x2="397" y2="96" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="365" y1="210" x2="397" y2="210" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="590" y1="96" x2="622" y2="96" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="590" y1="210" x2="622" y2="210" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="795" y1="96" x2="827" y2="96" marker-end="url(#arr1)"></line>
+        <line class="dg-edge" x1="795" y1="210" x2="827" y2="210" marker-end="url(#arr1)"></line>
+        <a href="#ai-arch" class="dg-link">
+          <line class="dg-dash" x1="495" y1="260" x2="495" y2="296" marker-end="url(#arr1)"></line>
+          <text class="dg-label" x="505" y="290">AI clips wizard → export/ai/ · see below</text>
+        </a>
+        <rect class="dg-band" x="10" y="304" width="1020" height="150" rx="4"></rect>
+        <text class="dg-title" x="520" y="332" text-anchor="middle">Electron desktop app · macOS only</text>
+        <text class="dg-text" x="520" y="354" text-anchor="middle">React UI — studio · preview · layers · scenes · audio · recording · export</text>
+        <text class="dg-text" x="520" y="374" text-anchor="middle">main-process services + IPC — recording · media-core client · config · stats · power-guard</text>
+        <text class="dg-text" x="520" y="394" text-anchor="middle">FFmpeg + media core bundled — no system deps · Resource monitor: CPU / GPU / memory / disk</text>
+        <text class="dg-text" x="520" y="414" text-anchor="middle">Quit mid-recording: finalize first, then finish exports before closing</text>
+      </svg>
+    </div>
+    <h3 class="group-title" id="ai-arch"><span class="tag tag-ai">Meta AI inside</span> Highlights + subtitles pipeline</h3>
+    <p class="group-sub">Two lanes through the same Model API: one watches a compact render for highlights, the other transcribes the mic and translates it. Everything else runs on the Mac.</p>
+    <div class="diagram-scroll reveal">
+      <svg viewBox="0 0 1040 640" role="img" aria-label="AI architecture: highlights lane and subtitles lane through the Meta Model API">
+        <defs>
+          <marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7d8783"></path></marker>
+        </defs>
+        <rect class="dg-box" x="10" y="14" width="1020" height="62" rx="4"></rect>
+        <text class="dg-title" x="520" y="38" text-anchor="middle">Step 1 · Setup — pick a recording, paste the Model API key</text>
+        <text class="dg-text" x="520" y="58" text-anchor="middle">Key lives in the main process only · env MODEL_API_KEY · Bearer auth · never reaches the renderer</text>
+        <text class="dg-h" x="65" y="100" text-anchor="middle">STEP</text>
+        <text class="dg-h" x="230" y="100" text-anchor="middle">PREPARE · ON MAC</text>
+        <text class="dg-h" x="435" y="100" text-anchor="middle">UPLOAD · REAL BYTES</text>
+        <text class="dg-h" x="655" y="100" text-anchor="middle">META MODEL API</text>
+        <text class="dg-h" x="910" y="100" text-anchor="middle">VALIDATE + SAVE · ON MAC</text>
+        <rect class="dg-box" x="10" y="116" width="110" height="196" rx="4"></rect>
+        <text class="dg-title" x="65" y="200" text-anchor="middle">Step 3</text>
+        <text class="dg-text" x="65" y="218" text-anchor="middle">Highlights</text>
+        <rect class="dg-box" x="130" y="116" width="200" height="196" rx="4"></rect>
+        <text class="dg-title" x="230" y="140" text-anchor="middle">Step 2 · AI clip</text>
+        <text class="dg-text" x="230" y="158" text-anchor="middle">forced-360p vertical</text>
+        <text class="dg-mono" x="230" y="176" text-anchor="middle">export/ai/ai-360p.mp4</text>
+        <text class="dg-text" x="230" y="194" text-anchor="middle">30 s middle cut:</text>
+        <text class="dg-mono" x="230" y="212" text-anchor="middle">export/ai/ai-short-clip.mp4</text>
+        <rect class="dg-box" x="350" y="116" width="170" height="196" rx="4"></rect>
+        <text class="dg-title" x="435" y="140" text-anchor="middle">Files API</text>
+        <text class="dg-mono" x="435" y="158" text-anchor="middle">POST /v1/files</text>
+        <text class="dg-text" x="435" y="176" text-anchor="middle">multipart purpose=</text>
+        <text class="dg-text" x="435" y="194" text-anchor="middle">user_data · video/mp4</text>
+        <text class="dg-text" x="435" y="212" text-anchor="middle">≤ 1 GiB · live byte %</text>
+        <rect class="dg-meta" x="540" y="116" width="230" height="196" rx="4"></rect>
+        <text class="dg-mono" x="655" y="140" text-anchor="middle">muse-spark-1.3</text>
+        <text class="dg-text" x="655" y="158" text-anchor="middle">POST /v1/responses</text>
+        <text class="dg-text" x="655" y="176" text-anchor="middle">3–5 JSON moments:</text>
+        <text class="dg-text" x="655" y="194" text-anchor="middle">start · end · category</text>
+        <text class="dg-text" x="655" y="212" text-anchor="middle">title · reason</text>
+        <rect class="dg-box" x="790" y="116" width="240" height="196" rx="4"></rect>
+        <text class="dg-title" x="910" y="140" text-anchor="middle">Validate + export</text>
+        <text class="dg-text" x="910" y="158" text-anchor="middle">clamp · pad 30 s · dedupe</text>
+        <text class="dg-text" x="910" y="176" text-anchor="middle">max 8 → ai-highlights.json</text>
+        <text class="dg-text" x="910" y="194" text-anchor="middle">re-render vertical @ take res</text>
+        <text class="dg-mono" x="910" y="212" text-anchor="middle">highlight_001_&lt;category&gt;.mp4</text>
+        <line class="dg-edge" x1="330" y1="214" x2="347" y2="214" marker-end="url(#arr2)"></line>
+        <line class="dg-edge" x1="520" y1="214" x2="537" y2="214" marker-end="url(#arr2)"></line>
+        <line class="dg-edge" x1="770" y1="214" x2="787" y2="214" marker-end="url(#arr2)"></line>
+        <rect class="dg-box" x="10" y="328" width="110" height="196" rx="4"></rect>
+        <text class="dg-title" x="65" y="412" text-anchor="middle">Steps 4–5</text>
+        <text class="dg-text" x="65" y="430" text-anchor="middle">Subtitles</text>
+        <rect class="dg-box" x="130" y="328" width="200" height="196" rx="4"></rect>
+        <text class="dg-title" x="230" y="352" text-anchor="middle">Step 4 · Mic WAV</text>
+        <text class="dg-mono" x="230" y="370" text-anchor="middle">microphone.m4a → ffmpeg</text>
+        <text class="dg-mono" x="230" y="388" text-anchor="middle">-ac 1 -ar 16000</text>
+        <text class="dg-mono" x="230" y="406" text-anchor="middle">master/microphone.wav</text>
+        <text class="dg-text" x="230" y="424" text-anchor="middle">16 kHz mono 16-bit</text>
+        <rect class="dg-box" x="350" y="328" width="170" height="196" rx="4"></rect>
+        <text class="dg-title" x="435" y="352" text-anchor="middle">ASR upload</text>
+        <text class="dg-mono" x="435" y="370" text-anchor="middle">POST /v1/asr/transcribe</text>
+        <text class="dg-text" x="435" y="388" text-anchor="middle">multipart request+audio</text>
+        <text class="dg-text" x="435" y="406" text-anchor="middle">mode DIARIZATION</text>
+        <text class="dg-text" x="435" y="424" text-anchor="middle">WAV · live byte %</text>
+        <rect class="dg-meta" x="540" y="328" width="230" height="196" rx="4"></rect>
+        <text class="dg-mono" x="655" y="352" text-anchor="middle">muse-voice-transcribe-1.0</text>
+        <text class="dg-text" x="655" y="370" text-anchor="middle">→ turns + API timestamps</text>
+        <text class="dg-text" x="655" y="388" text-anchor="middle">then muse-spark-1.3</text>
+        <text class="dg-text" x="655" y="406" text-anchor="middle">per language · ids kept</text>
+        <text class="dg-text" x="655" y="424" text-anchor="middle">1–78 languages</text>
+        <rect class="dg-box" x="790" y="328" width="240" height="196" rx="4"></rect>
+        <text class="dg-title" x="910" y="352" text-anchor="middle">Write one .srt per lang</text>
+        <text class="dg-text" x="910" y="370" text-anchor="middle">map ids + timestamps</text>
+        <text class="dg-text" x="910" y="388" text-anchor="middle">cues 1..N · HH:MM:SS,mmm</text>
+        <text class="dg-mono" x="910" y="406" text-anchor="middle">subtitles-&lt;code&gt;.srt</text>
+        <text class="dg-text" x="910" y="424" text-anchor="middle">per-lang errors saved</text>
+        <line class="dg-edge" x1="330" y1="426" x2="347" y2="426" marker-end="url(#arr2)"></line>
+        <line class="dg-edge" x1="520" y1="426" x2="537" y2="426" marker-end="url(#arr2)"></line>
+        <line class="dg-edge" x1="770" y1="426" x2="787" y2="426" marker-end="url(#arr2)"></line>
+        <rect class="dg-box" x="10" y="540" width="1020" height="72" rx="4"></rect>
+        <text class="dg-title" x="520" y="566" text-anchor="middle">Honest progress everywhere</text>
+        <text class="dg-text" x="520" y="586" text-anchor="middle">real upload bytes + real FFmpeg time · model stages are labels only, polled every 500 ms · cancel any time</text>
+      </svg>
+    </div>
+
+    <h3 class="group-title"><span class="tag tag-ai">Meta AI inside</span> What we do, and with which model</h3>
+    <p class="group-sub">Every AI task in the app, the model behind it, and what flows in and out.</p>
+    <div class="diagram-scroll reveal">
+      <table class="model-table">
+        <thead>
+          <tr><th>What we do</th><th>Model</th><th>API call</th><th>Input → output</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Spot highlight moments in gameplay</td><td><code>muse-spark-1.3</code></td><td><code>POST /v1/files</code> then <code>POST /v1/responses</code></td><td><code>ai-360p.mp4</code> → up to 8 JSON moments → <code>highlight_*.mp4</code></td></tr>
+          <tr><td>Transcribe microphone speech once</td><td><code>muse-voice-transcribe-1.0</code></td><td><code>POST /v1/asr/transcribe</code></td><td><code>microphone.wav</code> → turns with API timestamps</td></tr>
+          <tr><td>Translate subtitles (up to 78 languages)</td><td><code>muse-spark-1.3</code></td><td><code>POST /v1/responses</code> per language</td><td>turns <code>[{id, text}]</code> → <code>subtitles-&lt;code&gt;.srt</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="model-note reveal">All three calls go to <code>https://api.meta.ai</code> with one key from the <a href="https://dev.meta.ai/">Meta developer portal</a>. The key is stored via the main process (<code>MODEL_API_KEY</code>) and sent as a <code>Bearer</code> token — it never reaches the renderer.</p>
+  </section>
+
+  <section class="strip strip-alt" id="features">
     <div class="section-head">
       <h2>Built for recording first</h2>
       <p>The AI is only half the story. Every source is captured separately and stays untouched.</p>
@@ -334,7 +524,7 @@ NATO ਚਲੋ ਯਾਰੋ
     </div>
   </section>
 
-  <section class="strip strip-alt" id="meta">
+  <section class="strip" id="meta">
     <div class="section-head">
       <h2>Powered by Meta's Model API</h2>
       <p>Two hosted models do all the understanding. Everything else runs on your Mac.</p>
@@ -359,22 +549,22 @@ NATO ਚਲੋ ਯਾਰੋ
     <p class="model-note reveal">Spoken dubbing waits on Meta releasing a text-to-speech model — the Model API returns text only today, so the app ships subtitles, not synthetic voices.</p>
   </section>
 
-  <section class="strip" id="install">
+  <section class="strip strip-alt" id="install">
     <div class="section-head">
       <h2>Install in a minute</h2>
       <p>macOS only. Apple Silicon and Intel builds. FFmpeg rides inside the app — nothing else to install.</p>
     </div>
     <ol class="install-steps">
       <li class="reveal"><span class="p-num">1</span><div><h3>Download the .dmg</h3><p>Pick the build that matches your Mac. Unsure? Apple menu → About This Mac: “Chip: Apple M…” means Apple Silicon.</p></div></li>
-      <li class="reveal"><span class="p-num">2</span><div><h3>Drag to Applications</h3><p>Open the <code>.dmg</code> and drag <strong>Babu Studio</strong> into <strong>Applications</strong>.</p></div></li>
+      <li class="reveal"><span class="p-num">2</span><div><h3>Drag to Applications</h3><p>Open the <code>.dmg</code> and drag <strong>Babu AI Studio</strong> into <strong>Applications</strong>.</p></div></li>
       <li class="reveal"><span class="p-num">3</span><div><h3>Approve the first launch</h3><p>The app isn't notarized, so macOS asks once. Right-click → Open, or System Settings → Privacy &amp; Security → Open Anyway.</p></div></li>
       <li class="reveal"><span class="p-num">4</span><div><h3>Paste your Model API key</h3><p>Open the AI popup, step 1, and save your key from the <a href="https://dev.meta.ai/">Meta developer portal</a>. Recording works without it; AI steps need it.</p></div></li>
     </ol>
   </section>
 
-  <section class="strip strip-alt" id="download">
+  <section class="strip" id="download">
     <div class="section-head">
-      <h2>Download Babu Studio</h2>
+      <h2>Download Babu AI Studio</h2>
       <p>Free installers from the GitHub releases page.</p>
     </div>
     <p class="dl-version reveal">Latest version <a href="https://github.com/babu-studios/babu-studio-app/releases/tag/v0.1.1-beta.1"><code>v0.1.1-beta.1</code></a> — see what's new on the <a href="https://github.com/babu-studios/babu-studio-app/releases/tag/v0.1.1-beta.1">release page</a>.</p>
@@ -388,12 +578,38 @@ NATO ਚਲੋ ਯਾਰੋ
     </div>
     <p class="dl-alt reveal">Prefer the full list? See <a href="https://github.com/babu-studios/babu-studio-app/releases">all releases</a> or the <a href="https://babu-studios.github.io/babu-studio-app/">download page</a>.</p>
   </section>
+  <section class="room-full" id="room">
+    <div class="section-head room-head">
+      <h2>Meta AI Hackathon Room</h2>
+      <p>Four round team tables, seven solo tables, mentors on rounds, a live demo stage and a snack stall. Drag to look around, or jump to a view.</p>
+    </div>
+    <div class="room-wrap reveal" id="room-wrap">
+      <canvas id="room-canvas"></canvas>
+      <div class="room-controls" id="room-controls">
+        <button type="button" data-view="overview">Overview</button>
+        <button type="button" data-view="teams">Teams</button>
+        <button type="button" data-view="solo">Solo desks</button>
+        <button type="button" data-view="stage">Stage</button>
+        <span class="room-hint">Drag to look around</span>
+      </div>
+      <p class="room-fallback" id="room-fallback" hidden><span data-room-msg>This 3D room needs WebGL — please try a browser with hardware acceleration enabled.</span> <button type="button" class="linklike" id="room-retry">Try again</button></p>
+    </div>
+  </section>
 </main>
 
 <footer>
-  <p>Babu Studio · Built with the Meta Model API</p>
+  <p>Babu AI Studio · Built with the Meta Model API</p>
   <p><a href="https://github.com/babu-studios/babu-studio-app">Source on GitHub</a> · <a href="https://dev.meta.ai/docs">Meta Model API docs</a></p>
 </footer>
+<!-- three.js r160 vendored locally (room section) so the 3D works offline (source: jsdelivr, MIT) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js"
+  }
+}
+</script>
+<script type="module" src="room3d.js"></script>
 <script src="site.js"></script>
 </body>
 </html>

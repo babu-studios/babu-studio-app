@@ -50,8 +50,8 @@ a { color: var(--green); }
 .notice-bar strong { color: var(--ink); }
 
 /* Top bar */
+.sticky-top { position: sticky; top: 0; z-index: 20; }
 .topbar {
-  position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: 1.5rem;
   padding: 0.7rem 2rem;
   background: var(--bg-inset);
@@ -59,6 +59,7 @@ a { color: var(--green); }
 }
 .brand { display: flex; align-items: center; gap: 0.6rem; color: var(--ink); text-decoration: none; font-weight: 700; }
 .brand-mark { width: 14px; height: 14px; background: var(--green); border-radius: 2px; animation: mark-pulse 2.4s ease-in-out infinite; }
+.brand-meta { font-size: 0.72rem; font-weight: 500; color: var(--ink-faint); letter-spacing: 0.02em; }
 
 /* Meta AI shimmer: animated blue-to-violet gradient, used only where the
    page talks about Meta's models. */
@@ -111,12 +112,12 @@ a { color: var(--green); }
 /* Hero */
 .hero {
   display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 3rem;
-  padding: 4.5rem 2rem 3.5rem; max-width: 1100px; margin: 0 auto;
+  padding: 4.5rem 2rem 3.5rem; max-width: calc(1100px + 2rem); margin: 0 auto;
   align-items: center;
 }
 .lede { font-size: 1.1rem; }
 .hero-actions { display: flex; gap: 0.8rem; margin: 1.4rem 0 2rem; flex-wrap: wrap; }
-.hero-stats { display: flex; gap: 2.2rem; margin: 0; }
+.hero-stats { display: flex; flex-wrap: wrap; gap: 1rem 2.2rem; margin: 0; }
 .hero-stats div { border-left: 2px solid var(--green); padding-left: 0.8rem; }
 .hero-stats dt { font-size: 1.7rem; font-weight: 750; color: var(--ink); }
 .hero-stats dd { margin: 0; font-size: 0.85rem; color: var(--ink-faint); }
@@ -151,9 +152,9 @@ a { color: var(--green); }
 .export-bar em { font-style: normal; font-size: 0.75rem; color: var(--ink-dim); }
 
 /* Sections */
-.strip { padding: 3.5rem 2rem; max-width: 1100px; margin: 0 auto; }
+.strip { padding: 3.5rem 2rem; max-width: calc(1100px + 2rem); margin: 0 auto; }
 .strip-alt { background: var(--bg-raise); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); max-width: none; }
-.strip-alt > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+.strip-alt > * { max-width: calc(1100px - 2rem); margin-left: auto; margin-right: auto; }
 .section-head { margin-bottom: 2rem; }
 .section-head p { font-size: 1.05rem; max-width: 640px; }
 
@@ -169,8 +170,6 @@ a { color: var(--green); }
    pipeline section), with killers for UA list indent, then sit slightly in
    from the heading edge. */
 .install-steps { list-style: none; margin: 0 auto; padding: 0; padding-inline-start: 0; display: grid; max-width: 1100px; }
-/* Install steps sit in from the heading edge, not flush full-left. */
-#install .install-steps { padding-left: 0.25rem; }
 .p-num {
   width: 40px; height: 40px;
   border: 1px solid var(--green); color: var(--green);
@@ -192,10 +191,11 @@ a { color: var(--green); }
 
 /* Download */
 .dl-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.dl-card { background: var(--bg-raise); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.6rem; text-decoration: none; display: block; }
+.dl-card { background: var(--bg-raise); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.6rem; text-decoration: none; display: flex; flex-direction: column; }
 .dl-card:hover { border-color: var(--green); }
 .dl-card h3 { color: var(--ink); }
-.dl-card .btn { margin-top: 0.6rem; }
+.dl-card .btn { align-self: flex-start; margin-top: auto; }
+.dl-card p { margin-bottom: 1.4rem; }
 .dl-alt { margin-top: 1.2rem; }
 .dl-version { margin-bottom: 1.4rem; }
 .dl-version a code { color: var(--green); }
@@ -217,7 +217,7 @@ h4 { font-size: 1rem; font-weight: 650; line-height: 1.3; margin: 0 0 0.5rem; }
 .portrait .video-frame { aspect-ratio: 9 / 16; }
 .video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .video-frame.empty { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); min-height: 120px; }
-.video-play { position: absolute; inset: 0; width: 100%; border: 0; background: #000 center / cover no-repeat; cursor: pointer; }
+.video-play { position: absolute; inset: 0; width: 100%; border: 0; background: #000 center / cover no-repeat; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .video-play span {
   display: inline-flex; align-items: center; justify-content: center;
   width: 60px; height: 60px; padding-left: 4px;
@@ -248,6 +248,48 @@ h4 { font-size: 1rem; font-weight: 650; line-height: 1.3; margin: 0 0 0.5rem; }
   white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto;
 }
 .sub-raw { font-size: 0.85rem; white-space: nowrap; }
+
+.linklike { background: none; border: 0; padding: 0; color: var(--green); font: inherit; font-size: 0.85rem; cursor: pointer; }
+.linklike:hover { text-decoration: underline; }
+
+/* Architecture diagrams + model table */
+.diagram-scroll { overflow-x: auto; background: var(--bg-inset); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin-bottom: 0.5rem; }
+.diagram-scroll > svg, .diagram-scroll > table { min-width: 720px; }
+.diagram-scroll > svg { display: block; width: 100%; height: auto; }
+.dg-box { fill: var(--bg-raise); stroke: var(--line); }
+.dg-band { fill: var(--bg-raise); stroke: var(--line); }
+.dg-meta { fill: rgba(0, 149, 255, 0.07); stroke: #2a5a8f; }
+.dg-title { fill: var(--ink); font-size: 13px; font-weight: 700; font-family: var(--font); }
+.dg-text { fill: var(--ink-dim); font-size: 11.5px; font-family: var(--font); }
+.dg-mono { fill: var(--ink-dim); font-size: 10.5px; font-family: var(--mono); }
+.dg-h { fill: var(--ink-faint); font-size: 11px; letter-spacing: 0.08em; font-family: var(--font); }
+.dg-edge { stroke: var(--ink-faint); stroke-width: 1.5; }
+.dg-dash { stroke: var(--ink-faint); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.dg-label { fill: var(--ink-faint); font-size: 11px; font-family: var(--font); }
+.dg-link text { fill: var(--green); }
+.model-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.model-table th, .model-table td { text-align: left; vertical-align: top; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--line); }
+.model-table thead th { color: var(--ink); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--green-deep); white-space: nowrap; }
+.model-table tbody tr:last-child td { border-bottom: 0; }
+.model-table tbody tr:hover td { background: var(--bg-raise); }
+.model-table td { color: var(--ink-dim); }
+
+/* Hackathon room (full-width 3D finale) */
+.room-full { padding: 3.5rem 0 0; background: var(--bg-inset); border-top: 1px solid var(--line); }
+.room-head { max-width: 1100px; margin: 0 auto 2rem; padding: 0 2rem; }
+.room-wrap { position: relative; height: 560px; background: radial-gradient(120% 100% at 50% 0%, #0c1412 0%, #050807 70%); border-top: 1px solid var(--line); }
+#room-canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: grab; }
+#room-canvas:active { cursor: grabbing; }
+.room-controls { position: absolute; left: 50%; bottom: 1rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.5rem; max-width: 94vw; overflow-x: auto; background: rgba(11, 14, 13, 0.82); border: 1px solid var(--line); border-radius: 999px; padding: 0.4rem 0.6rem; }
+.room-controls button { background: transparent; border: 0; color: var(--ink-dim); font: inherit; font-size: 0.82rem; font-weight: 600; padding: 0.35rem 0.8rem; border-radius: 999px; cursor: pointer; }
+.room-controls button:hover { color: var(--ink); }
+.room-controls button.active { background: var(--green); color: #06130a; }
+.room-hint { font-size: 0.78rem; color: var(--ink-faint); padding: 0 0.5rem; white-space: nowrap; }
+.room-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; padding: 2rem; text-align: center; }
+@media (max-width: 860px) {
+  .room-wrap { height: 420px; }
+  .room-hint { display: none; }
+}
 
 /* Screenshot */
 .shot { margin: 2.2rem 0 0; }
