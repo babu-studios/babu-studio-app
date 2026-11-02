@@ -312,7 +312,7 @@ footer p { margin: 0 0 0.4rem; font-size: 0.85rem; color: var(--ink-faint); }
 }
 .modal-backdrop[hidden] { display: none; }
 .modal {
-  width: min(1020px, 100%); height: min(82vh, 720px);
+  width: min(1280px, 96vw); height: min(90vh, 820px);
   background: var(--bg-raise);
   border: 1px solid var(--line);
   border-radius: var(--radius);
