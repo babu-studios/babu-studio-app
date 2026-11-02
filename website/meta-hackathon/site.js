@@ -76,8 +76,10 @@
 (function () {
   "use strict";
 
+  // NOTE: bump ?v=N below every time the .pptx is updated — the Office
+  // viewer caches aggressively by URL, and a new query string forces a refetch.
   var EMBED_URL = "https://view.officeapps.live.com/op/embed.aspx"
-    + "?src=https%3A%2F%2Fbabu-studios.github.io%2Fbabu-studio-app%2Fmeta-hackathon%2FBabuStudioMetaAIHackathon.pptx";
+    + "?src=https%3A%2F%2Fbabu-studios.github.io%2Fbabu-studio-app%2Fmeta-hackathon%2FBabuStudioMetaAIHackathon.pptx%3Fv%3D2";
 
   var openBtn = document.getElementById("deck-preview-btn");
   var modal = document.getElementById("deck-modal");
