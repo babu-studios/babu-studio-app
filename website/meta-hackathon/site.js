@@ -70,16 +70,14 @@
   });
 })();
 
-// Deck preview modal: opens the Office viewer embed in a popup instead of
-// a new tab. The iframe loads only on first open (same facade idea as the
-// YouTube embeds above). Without JS the hero link still opens the viewer.
+// Deck preview modal: embeds the live .pptx via Google's viewer in a popup.
+// The iframe loads only on first open (same facade idea as the YouTube
+// embeds above). Without JS the hero link opens the viewer in a new tab.
 (function () {
   "use strict";
 
-  // NOTE: bump ?v=N below every time the .pptx is updated — the Office
-  // viewer caches aggressively by URL, and a new query string forces a refetch.
-  var EMBED_URL = "https://view.officeapps.live.com/op/embed.aspx"
-    + "?src=https%3A%2F%2Fbabu-studios.github.io%2Fbabu-studio-app%2Fmeta-hackathon%2FBabuStudioMetaAIHackathon.pptx%3Fv%3D2";
+  var EMBED_URL = "https://docs.google.com/viewer"
+    + "?url=https%3A%2F%2Fbabu-studios.github.io%2Fbabu-studio-app%2Fmeta-hackathon%2FBabuStudioMetaAIHackathon.pptx&embedded=true";
 
   var openBtn = document.getElementById("deck-preview-btn");
   var modal = document.getElementById("deck-modal");
