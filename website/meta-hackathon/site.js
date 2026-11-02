@@ -70,6 +70,55 @@
   });
 })();
 
+// Deck preview modal: opens the Office viewer embed in a popup instead of
+// a new tab. The iframe loads only on first open (same facade idea as the
+// YouTube embeds above). Without JS the hero link still opens the viewer.
+(function () {
+  "use strict";
+
+  var EMBED_URL = "https://view.officeapps.live.com/op/embed.aspx"
+    + "?src=https%3A%2F%2Fbabu-studios.github.io%2Fbabu-studio-app%2Fmeta-hackathon%2FBabuStudioMetaAIHackathon.pptx";
+
+  var openBtn = document.getElementById("deck-preview-btn");
+  var modal = document.getElementById("deck-modal");
+  if (!openBtn || !modal) {
+    return;
+  }
+  var frame = document.getElementById("deck-frame");
+  var closeBtn = document.getElementById("deck-modal-close");
+
+  function open(e) {
+    if (e) {
+      e.preventDefault();
+    }
+    if (!frame.getAttribute("src")) {
+      frame.setAttribute("src", EMBED_URL);
+    }
+    modal.hidden = false;
+    document.body.classList.add("modal-open");
+    closeBtn.focus();
+  }
+
+  function close() {
+    modal.hidden = true;
+    document.body.classList.remove("modal-open");
+    openBtn.focus();
+  }
+
+  openBtn.addEventListener("click", open);
+  closeBtn.addEventListener("click", close);
+  modal.addEventListener("click", function (e) {
+    if (e.target === modal) {
+      close();
+    }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !modal.hidden) {
+      close();
+    }
+  });
+})();
+
 // Scroll reveals + animated hero counters. No dependencies.
 (function () {
   "use strict";

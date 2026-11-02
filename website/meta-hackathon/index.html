@@ -34,6 +34,7 @@
       <div class="hero-actions">
         <a class="btn" href="#download">Download for Mac</a>
         <a class="btn btn-ghost" href="#ai-pipeline">See the AI pipeline</a>
+        <a class="btn btn-ghost" id="deck-preview-btn" href="https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fbabu-studios.github.io%2Fbabu-studio-app%2Fmeta-hackathon%2FBabuStudioMetaAIHackathon.pptx" target="_blank" rel="noopener">Preview Presentation ↗</a>
       </div>
       <dl class="hero-stats">
         <div><dt data-count="5">0</dt><dd>guided AI steps</dd></div>
@@ -601,6 +602,19 @@ NATO ਚਲੋ ਯਾਰੋ
   <p>Babu AI Studio · Built with the Meta Model API</p>
   <p><a href="https://github.com/babu-studios/babu-studio-app">Source on GitHub</a> · <a href="https://dev.meta.ai/docs">Meta Model API docs</a></p>
 </footer>
+
+<div class="modal-backdrop" id="deck-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deck-modal-title">
+    <div class="modal-head">
+      <h2 id="deck-modal-title">Hackathon Presentation</h2>
+      <button type="button" class="modal-close" id="deck-modal-close" aria-label="Close preview">×</button>
+    </div>
+    <div class="modal-body">
+      <iframe id="deck-frame" title="Hackathon presentation preview"></iframe>
+    </div>
+    <p class="modal-foot">Preview not loading? <a href="./BabuStudioMetaAIHackathon.pptx" download>Download the .pptx</a></p>
+  </div>
+</div>
 <!-- three.js r160 vendored locally (room section) so the 3D works offline (source: jsdelivr, MIT) -->
 <script type="importmap">
 {
