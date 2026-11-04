@@ -225,6 +225,11 @@ h4 { font-size: 1rem; font-weight: 650; line-height: 1.3; margin: 0 0 0.5rem; }
 }
 .video-play:hover span { filter: brightness(1.1); }
 
+/* X post embeds, side by side on desktop */
+.x-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; align-items: start; }
+.x-embed { max-width: 550px; margin: 0 auto; width: 100%; min-width: 0; }
+.x-embed .twitter-tweet { margin: 0 auto; }
+
 .sub-browser { display: grid; grid-template-columns: 230px 1fr; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .sub-list { display: flex; flex-direction: column; background: var(--bg-inset); border-right: 1px solid var(--line); }
 .sub-list button {
@@ -366,6 +371,7 @@ body.modal-open { overflow: hidden; }
   .originals { grid-template-columns: 1fr; }
   .originals .portrait { max-width: 260px; }
   .shorts-grid { grid-template-columns: repeat(2, 1fr); }
+  .x-row { grid-template-columns: 1fr; max-width: 550px; margin: 0 auto; }
   .topnav { display: none; }
   .room-controls button { min-height: 44px; }
   .sub-list button { min-height: 44px; }
